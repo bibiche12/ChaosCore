@@ -1,8 +1,5 @@
 require('dotenv').config();
 
-const fs = require('fs');
-const path = require('path');
-
 const {
     Client,
     GatewayIntentBits,
@@ -14,6 +11,7 @@ const {
 
 const axios = require('axios');
 const tmi = require('tmi.js');
+const { Pool } = require('pg');
 
 const client = new Client({
     intents: [
@@ -22,6 +20,10 @@ const client = new Client({
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers
     ]
+});
+
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL
 });
 
 // ==========================
@@ -63,7 +65,6 @@ const MONEY_NAME = 'Bichcoin';
 const TEAM_ROLE_NAME = '👑 Team';
 
 const LOG_CHANNEL_ID = '1510994452972310708';
-const GUICHET_CHANNEL_ID = '1510994550343336067';
 
 const ALLOWED_MONEY_CHANNELS = [
     '1503703021832507452',
@@ -74,6 +75,8 @@ const ALLOWED_MONEY_CHANNELS = [
 const POINTS_PER_MESSAGE = 1;
 const MESSAGE_COOLDOWN = 60 * 1000;
 const MONTHLY_BONUS = 250;
+
+let messageCooldowns = new Map();
 
 // ==========================
 // CONFIG TICKETS DU CHAOS
@@ -95,96 +98,172 @@ let currentLive = {
 let twitchCooldowns = new Map();
 
 // ==========================
-// DATA
+// DATABASE
 // ==========================
 
-const DATA_DIR = path.join(__dirname, 'data');
-const POINTS_FILE = path.join(DATA_DIR, 'points.json');
-const TICKETS_FILE = path.join(DATA_DIR, 'tickets.json');
+async function initDatabase() {
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS economy (
+            user_id TEXT PRIMARY KEY,
+            balance INTEGER NOT NULL DEFAULT 0,
+            last_monthly_bonus TEXT
+        );
+    `);
 
-let pointsData = {};
-let ticketsData = {
-    users: {},
-    twitchLinks: {}
-};
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS tickets (
+            user_id TEXT PRIMARY KEY,
+            tickets INTEGER NOT NULL DEFAULT 0,
+            twitch_messages INTEGER NOT NULL DEFAULT 0,
+            presences INTEGER NOT NULL DEFAULT 0,
+            manual INTEGER NOT NULL DEFAULT 0
+        );
+    `);
 
-let messageCooldowns = new Map();
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS twitch_links (
+            twitch_name TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL
+        );
+    `);
 
-function ensureDataFile(file, defaultData) {
-    if (!fs.existsSync(DATA_DIR)) {
-        fs.mkdirSync(DATA_DIR);
-    }
-
-    if (!fs.existsSync(file)) {
-        fs.writeFileSync(file, JSON.stringify(defaultData, null, 4));
-    }
+    console.log('✅ Base PostgreSQL prête');
 }
 
-function loadData() {
-    ensureDataFile(POINTS_FILE, {});
-    ensureDataFile(TICKETS_FILE, { users: {}, twitchLinks: {} });
+async function getUserPoints(userId) {
+    const result = await pool.query(
+        `SELECT * FROM economy WHERE user_id = $1`,
+        [userId]
+    );
 
-    pointsData = JSON.parse(fs.readFileSync(POINTS_FILE, 'utf8') || '{}');
-    ticketsData = JSON.parse(fs.readFileSync(TICKETS_FILE, 'utf8') || '{"users":{},"twitchLinks":{}}');
+    if (result.rows.length === 0) {
+        await pool.query(
+            `INSERT INTO economy (user_id, balance, last_monthly_bonus)
+             VALUES ($1, 0, NULL)`,
+            [userId]
+        );
 
-    if (!ticketsData.users) ticketsData.users = {};
-    if (!ticketsData.twitchLinks) ticketsData.twitchLinks = {};
-}
-
-function savePoints() {
-    fs.writeFileSync(POINTS_FILE, JSON.stringify(pointsData, null, 4));
-}
-
-function saveTickets() {
-    fs.writeFileSync(TICKETS_FILE, JSON.stringify(ticketsData, null, 4));
-}
-
-function getUserPoints(userId) {
-    if (!pointsData[userId]) {
-        pointsData[userId] = {
+        return {
+            user_id: userId,
             balance: 0,
-            lastMonthlyBonus: null
+            last_monthly_bonus: null
         };
     }
 
-    return pointsData[userId];
+    return result.rows[0];
 }
 
-function addPoints(userId, amount) {
-    const userData = getUserPoints(userId);
-    userData.balance += amount;
+async function addPoints(userId, amount) {
+    await getUserPoints(userId);
 
-    if (userData.balance < 0) {
-        userData.balance = 0;
-    }
+    const result = await pool.query(
+        `UPDATE economy
+         SET balance = GREATEST(balance + $2, 0)
+         WHERE user_id = $1
+         RETURNING balance`,
+        [userId, amount]
+    );
 
-    savePoints();
-    return userData.balance;
+    return result.rows[0].balance;
 }
 
-function getTicketUser(userId) {
-    if (!ticketsData.users[userId]) {
-        ticketsData.users[userId] = {
+async function getTicketUser(userId) {
+    const result = await pool.query(
+        `SELECT * FROM tickets WHERE user_id = $1`,
+        [userId]
+    );
+
+    if (result.rows.length === 0) {
+        await pool.query(
+            `INSERT INTO tickets (user_id, tickets, twitch_messages, presences, manual)
+             VALUES ($1, 0, 0, 0, 0)`,
+            [userId]
+        );
+
+        return {
+            user_id: userId,
             tickets: 0,
-            twitchMessages: 0,
+            twitch_messages: 0,
             presences: 0,
             manual: 0
         };
     }
 
-    return ticketsData.users[userId];
+    return result.rows[0];
 }
 
-function addTickets(userId, amount, type = 'manual') {
-    const user = getTicketUser(userId);
+async function addTickets(userId, amount, type = 'manual') {
+    await getTicketUser(userId);
 
-    user.tickets += amount;
-    if (type === 'manual') user.manual += amount;
+    if (type === 'manual') {
+        await pool.query(
+            `UPDATE tickets
+             SET tickets = GREATEST(tickets + $2, 0),
+                 manual = manual + $2
+             WHERE user_id = $1`,
+            [userId, amount]
+        );
+    } else {
+        await pool.query(
+            `UPDATE tickets
+             SET tickets = GREATEST(tickets + $2, 0)
+             WHERE user_id = $1`,
+            [userId, amount]
+        );
+    }
+}
 
-    if (user.tickets < 0) user.tickets = 0;
+async function addPresenceTicket(userId) {
+    await getTicketUser(userId);
 
-    saveTickets();
-    return user.tickets;
+    await pool.query(
+        `UPDATE tickets
+         SET tickets = tickets + $2,
+             presences = presences + 1
+         WHERE user_id = $1`,
+        [userId, TICKET_PRESENCE]
+    );
+}
+
+async function addTwitchMessage(userId) {
+    await getTicketUser(userId);
+
+    await pool.query(
+        `UPDATE tickets
+         SET twitch_messages = twitch_messages + 1
+         WHERE user_id = $1`,
+        [userId]
+    );
+}
+
+async function addTwitchMessageTickets(userId, amount) {
+    await getTicketUser(userId);
+
+    await pool.query(
+        `UPDATE tickets
+         SET tickets = tickets + $2
+         WHERE user_id = $1`,
+        [userId, amount]
+    );
+}
+
+async function setTwitchLink(twitchName, userId) {
+    await pool.query(
+        `INSERT INTO twitch_links (twitch_name, user_id)
+         VALUES ($1, $2)
+         ON CONFLICT (twitch_name)
+         DO UPDATE SET user_id = EXCLUDED.user_id`,
+        [twitchName.toLowerCase(), userId]
+    );
+}
+
+async function getDiscordIdFromTwitch(twitchName) {
+    const result = await pool.query(
+        `SELECT user_id FROM twitch_links WHERE twitch_name = $1`,
+        [twitchName.toLowerCase()]
+    );
+
+    return result.rows[0]?.user_id || null;
 }
 
 async function sendLog(message) {
@@ -372,7 +451,7 @@ twitchChat.on('message', async (channel, tags, message, self) => {
     if (now - last < TWITCH_MESSAGE_COOLDOWN) return;
     twitchCooldowns.set(twitchName, now);
 
-    const discordId = ticketsData.twitchLinks[twitchName];
+    const discordId = await getDiscordIdFromTwitch(twitchName);
     if (!discordId) return;
 
     const guild = client.guilds.cache.first();
@@ -393,12 +472,11 @@ twitchChat.on('message', async (channel, tags, message, self) => {
     }
 
     const liveUser = currentLive.users[discordId];
-    const ticketUser = getTicketUser(discordId);
 
     if (!liveUser.presenceGiven) {
         liveUser.presenceGiven = true;
-        ticketUser.presences += 1;
-        ticketUser.tickets += TICKET_PRESENCE;
+
+        await addPresenceTicket(discordId);
 
         await sendContestLog(`🎟️ **Présence live validée**
 
@@ -408,7 +486,8 @@ twitchChat.on('message', async (channel, tags, message, self) => {
     }
 
     liveUser.messages += 1;
-    ticketUser.twitchMessages += 1;
+
+    await addTwitchMessage(discordId);
 
     const milestones = Math.floor(liveUser.messages / 10);
 
@@ -417,7 +496,8 @@ twitchChat.on('message', async (channel, tags, message, self) => {
         const gainedTickets = gainedMilestones * TICKET_EVERY_10_MESSAGES;
 
         liveUser.messageMilestones = milestones;
-        ticketUser.tickets += gainedTickets;
+
+        await addTwitchMessageTickets(discordId, gainedTickets);
 
         await sendContestLog(`💬 **Palier messages Twitch atteint**
 
@@ -426,8 +506,6 @@ twitchChat.on('message', async (channel, tags, message, self) => {
 💬 Messages live : **${liveUser.messages}**
 ➕ **${gainedTickets} Tickets du Chaos**`);
     }
-
-    saveTickets();
 });
 
 // ==========================
@@ -441,24 +519,19 @@ async function checkMonthlyBonus() {
 
     if (day !== 1) return;
 
-    let count = 0;
+    const result = await pool.query(
+        `UPDATE economy
+         SET balance = balance + $1,
+             last_monthly_bonus = $2
+         WHERE last_monthly_bonus IS NULL OR last_monthly_bonus <> $2
+         RETURNING user_id`,
+        [MONTHLY_BONUS, monthKey]
+    );
 
-    for (const userId of Object.keys(pointsData)) {
-        const userData = getUserPoints(userId);
-
-        if (userData.lastMonthlyBonus !== monthKey) {
-            userData.balance += MONTHLY_BONUS;
-            userData.lastMonthlyBonus = monthKey;
-            count++;
-        }
-    }
-
-    if (count > 0) {
-        savePoints();
-
+    if (result.rows.length > 0) {
         await sendLog(`🏦 **Bonus mensuel Oncle'Bich**
 
-${count} membre(s) ont reçu **${MONTHLY_BONUS} ${MONEY_NAME}s**.`);
+${result.rows.length} membre(s) ont reçu **${MONTHLY_BONUS} ${MONEY_NAME}s**.`);
     }
 }
 
@@ -469,8 +542,7 @@ ${count} membre(s) ont reçu **${MONTHLY_BONUS} ${MONEY_NAME}s**.`);
 client.once(Events.ClientReady, async (readyClient) => {
     console.log(`✅ ${readyClient.user.tag} est connecté !`);
 
-    loadData();
-    console.log('✅ Données chargées');
+    await initDatabase();
 
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
@@ -531,7 +603,8 @@ client.on(Events.MessageCreate, async message => {
     if (now - lastGain < MESSAGE_COOLDOWN) return;
 
     messageCooldowns.set(userId, now);
-    addPoints(userId, POINTS_PER_MESSAGE);
+
+    await addPoints(userId, POINTS_PER_MESSAGE);
 });
 
 // ==========================
@@ -546,7 +619,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     if (interaction.commandName === 'solde') {
-        const userData = getUserPoints(interaction.user.id);
+        const userData = await getUserPoints(interaction.user.id);
 
         await interaction.reply({
             content: `🏦 **Oncle'Bich consulte votre compte...**
@@ -568,7 +641,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const amount = interaction.options.getInteger('montant');
         const reason = interaction.options.getString('raison') || 'Aucune raison indiquée';
 
-        addPoints(target.id, amount);
+        await addPoints(target.id, amount);
 
         await interaction.reply({
             content: `✅ **${amount} ${MONEY_NAME}s** ajoutés à ${target}.`,
@@ -595,7 +668,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const amount = interaction.options.getInteger('montant');
         const reason = interaction.options.getString('raison') || 'Aucune raison indiquée';
 
-        addPoints(target.id, -amount);
+        await addPoints(target.id, -amount);
 
         await interaction.reply({
             content: `✅ **${amount} ${MONEY_NAME}s** retirés à ${target}.`,
@@ -621,8 +694,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const target = interaction.options.getUser('membre');
         const pseudo = interaction.options.getString('pseudo').toLowerCase();
 
-        ticketsData.twitchLinks[pseudo] = target.id;
-        saveTickets();
+        await setTwitchLink(pseudo, target.id);
 
         await interaction.reply({
             content: `✅ ${target} est maintenant associé au pseudo Twitch **${pseudo}**.`,
@@ -648,7 +720,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const amount = interaction.options.getInteger('montant');
         const reason = interaction.options.getString('raison');
 
-        addTickets(target.id, amount, 'manual');
+        await addTickets(target.id, amount, 'manual');
 
         await interaction.reply({
             content: `✅ **${amount} Tickets du Chaos** ajoutés à ${target}.`,
@@ -709,11 +781,13 @@ Utilisez \`/resume\` pour voir le classement.`);
     }
 
     if (interaction.commandName === 'resume') {
-        const entries = Object.entries(ticketsData.users)
-            .sort((a, b) => b[1].tickets - a[1].tickets)
-            .slice(0, 20);
+        const result = await pool.query(
+            `SELECT * FROM tickets
+             ORDER BY tickets DESC
+             LIMIT 20`
+        );
 
-        if (entries.length === 0) {
+        if (result.rows.length === 0) {
             return interaction.reply('🎟️ Aucun ticket enregistré pour le moment.');
         }
 
@@ -723,9 +797,9 @@ Utilisez \`/resume\` pour voir le classement.`);
 
         let rank = 1;
 
-        for (const [userId, data] of entries) {
-            message += `**${rank}.** <@${userId}> — **${data.tickets} Tickets**
-💬 Messages Twitch : ${data.twitchMessages || 0} | 🔴 Présences : ${data.presences || 0} | ✍️ Manuel : ${data.manual || 0}
+        for (const data of result.rows) {
+            message += `**${rank}.** <@${data.user_id}> — **${data.tickets} Tickets**
+💬 Messages Twitch : ${data.twitch_messages || 0} | 🔴 Présences : ${data.presences || 0} | ✍️ Manuel : ${data.manual || 0}
 
 `;
             rank++;
