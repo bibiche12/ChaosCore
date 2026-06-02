@@ -6,7 +6,10 @@ const {
     Events,
     REST,
     Routes,
-    SlashCommandBuilder
+    SlashCommandBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle
 } = require('discord.js');
 
 const axios = require('axios');
@@ -683,7 +686,7 @@ client.on(Events.InteractionCreate, async interaction => {
             content: `🏦 **Oncle'Bich consulte votre compte...**
 
 💰 Solde actuel : **${userData.balance} ${MONEY_NAME}s**`,
-            ephemeral: true
+            flags: 64
         });
     }
 if (interaction.commandName === 'profil') {
@@ -700,15 +703,15 @@ if (interaction.commandName === 'profil') {
 💬 Messages Twitch : **${ticketData.twitch_messages || 0}**
 🔴 Présences Live : **${ticketData.presences || 0}**
 ✍️ Tickets manuels : **${ticketData.manual || 0}**`,
-        ephemeral: true
+        flags: 64
     });
 }
 if (interaction.commandName === 'setupboutique') {
-await interaction.deferReply({ ephemeral: true });
+await interaction.deferReply({ flags: 64 });
     if (!hasTeamRole(interaction.member)) {
         return interaction.reply({
             content: '❌ Vous n’avez pas l’autorisation d’utiliser cette commande.',
-            ephemeral: true
+            flags: 64
         });
     }
 
@@ -717,7 +720,7 @@ await interaction.deferReply({ ephemeral: true });
     if (!shopChannel) {
         return interaction.reply({
             content: '❌ Salon boutique introuvable.',
-            ephemeral: true
+            flags: 64
         });
     }
 
@@ -749,20 +752,28 @@ if (existingIntroMessage) {
 📎 Image à fournir au moment de la demande
 
 [Image temporaire : 🎨]`;
+const emojiButton = new ActionRowBuilder()
+    .addComponents(
+        new ButtonBuilder()
+            .setCustomId('shop_buy_emoji')
+            .setLabel('Acheter')
+            .setEmoji('🛒')
+            .setStyle(ButtonStyle.Primary)
+    );
 
 const existingEmojiMessage = await getShopMessage('emoji');
-console.log('🛒 Message emoji existant :', existingEmojiMessage);
+
 if (existingEmojiMessage) {
     const oldMessage = await shopChannel.messages.fetch(existingEmojiMessage.message_id).catch(() => null);
 
     if (oldMessage) {
-        await oldMessage.edit({ content: emojiContent });
+        await oldMessage.edit({ content: emojiContent, components: [emojiButton] });
     } else {
-        const newMessage = await shopChannel.send({ content: emojiContent });
+        const newMessage = await shopChannel.send({ content: emojiContent, components: [emojiButton] });
         await saveShopMessage('emoji', newMessage.id, shopChannel.id);
     }
 } else {
-    const newMessage = await shopChannel.send({ content: emojiContent });
+    const newMessage = await shopChannel.send({ content: emojiContent, components: [emojiButton] });
     await saveShopMessage('emoji', newMessage.id, shopChannel.id);
 }
 
@@ -776,6 +787,14 @@ if (existingEmojiMessage) {
 🔴 🟠 🟡 🟢 🔵 🟣 🩷 ⚫ ⚪ 🟤
 
 [Image temporaire : 👑]`;
+const roleButton = new ActionRowBuilder()
+    .addComponents(
+        new ButtonBuilder()
+            .setCustomId('shop_buy_role')
+            .setLabel('Acheter')
+            .setEmoji('🛒')
+            .setStyle(ButtonStyle.Primary)
+    );
 
 const existingRoleMessage = await getShopMessage('role');
 
@@ -783,13 +802,13 @@ if (existingRoleMessage) {
     const oldMessage = await shopChannel.messages.fetch(existingRoleMessage.message_id).catch(() => null);
 
     if (oldMessage) {
-        await oldMessage.edit({ content: roleContent });
+        await oldMessage.edit({ content: roleContent, components: [roleButton] });
     } else {
-        const newMessage = await shopChannel.send({ content: roleContent });
+        const newMessage = await shopChannel.send({ content: roleContent, components: [roleButton] });
         await saveShopMessage('role', newMessage.id, shopChannel.id);
     }
 } else {
-    const newMessage = await shopChannel.send({ content: roleContent });
+    const newMessage = await shopChannel.send({ content: roleContent, components: [roleButton] });
     await saveShopMessage('role', newMessage.id, shopChannel.id);
 }
 
@@ -800,6 +819,14 @@ if (existingRoleMessage) {
 📌 Validation : manuelle
 
 [Image temporaire : 😈]`;
+const gageButton = new ActionRowBuilder()
+    .addComponents(
+        new ButtonBuilder()
+            .setCustomId('shop_buy_gage')
+            .setLabel('Acheter')
+            .setEmoji('🛒')
+            .setStyle(ButtonStyle.Primary)
+    );
 
 const existingGageMessage = await getShopMessage('gage');
 
@@ -807,13 +834,13 @@ if (existingGageMessage) {
     const oldMessage = await shopChannel.messages.fetch(existingGageMessage.message_id).catch(() => null);
 
     if (oldMessage) {
-        await oldMessage.edit({ content: gageContent });
+        await oldMessage.edit({ content: gageContent, components: [gageButton] });
     } else {
-        const newMessage = await shopChannel.send({ content: gageContent });
+        const newMessage = await shopChannel.send({ content: gageContent, components: [gageButton] });
         await saveShopMessage('gage', newMessage.id, shopChannel.id);
     }
 } else {
-    const newMessage = await shopChannel.send({ content: gageContent });
+    const newMessage = await shopChannel.send({ content: gageContent, components: [gageButton] });
     await saveShopMessage('gage', newMessage.id, shopChannel.id);
 }
 
@@ -824,6 +851,14 @@ const phraseContent = `📢 **Phrase épinglée sur le live**
 📌 Validation : manuelle
 
 [Image temporaire : 📢]`;
+const phraseButton = new ActionRowBuilder()
+    .addComponents(
+        new ButtonBuilder()
+            .setCustomId('shop_buy_phrase')
+            .setLabel('Acheter')
+            .setEmoji('🛒')
+            .setStyle(ButtonStyle.Primary)
+    );
 
 const existingPhraseMessage = await getShopMessage('phrase');
 
@@ -831,13 +866,13 @@ if (existingPhraseMessage) {
     const oldMessage = await shopChannel.messages.fetch(existingPhraseMessage.message_id).catch(() => null);
 
     if (oldMessage) {
-        await oldMessage.edit({ content: phraseContent });
+        await oldMessage.edit({ content: phraseContent, components: [phraseButton] });
     } else {
-        const newMessage = await shopChannel.send({ content: phraseContent });
+        const newMessage = await shopChannel.send({ content: phraseContent, components: [phraseButton] });
         await saveShopMessage('phrase', newMessage.id, shopChannel.id);
     }
 } else {
-    const newMessage = await shopChannel.send({ content: phraseContent });
+    const newMessage = await shopChannel.send({ content: phraseContent, components: [phraseButton] });
     await saveShopMessage('phrase', newMessage.id, shopChannel.id);
 }
 
@@ -848,12 +883,10 @@ if (existingPhraseMessage) {
 
 if (interaction.commandName === 'viderboutique') {
 
-    await interaction.deferReply({ ephemeral: true });
-
     if (!hasTeamRole(interaction.member)) {
         return interaction.reply({
             content: '❌ Vous n’avez pas l’autorisation d’utiliser cette commande.',
-            ephemeral: true
+            flags: 64
         });
     }
 
@@ -862,23 +895,25 @@ if (interaction.commandName === 'viderboutique') {
     if (!shopChannel) {
         return interaction.reply({
             content: '❌ Salon boutique introuvable.',
-            ephemeral: true
+            flags: 64
         });
     }
 
     const messages = await shopChannel.messages.fetch({ limit: 100 });
     await shopChannel.bulkDelete(messages, true);
 
-    await interaction.editReply({
-    content: '🧹 Boutique Oncle’Bich vidée.'
-});
+    await interaction.reply({
+        content: '🧹 Boutique Oncle’Bich vidée.',
+        flags: 64
+    });
 }
+
 
     if (interaction.commandName === 'adpoint') {
         if (!hasTeamRole(interaction.member)) {
             return interaction.reply({
                 content: '❌ Vous n’avez pas l’autorisation d’utiliser cette commande.',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -890,7 +925,7 @@ if (interaction.commandName === 'viderboutique') {
 
         await interaction.reply({
             content: `✅ **${amount} ${MONEY_NAME}s** ajoutés à ${target}.`,
-            ephemeral: true
+            flags: 64
         });
 
         await sendLog(`🏦 **Ajout manuel de ${MONEY_NAME}s**
@@ -905,7 +940,7 @@ if (interaction.commandName === 'viderboutique') {
         if (!hasTeamRole(interaction.member)) {
             return interaction.reply({
                 content: '❌ Vous n’avez pas l’autorisation d’utiliser cette commande.',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -917,7 +952,7 @@ if (interaction.commandName === 'viderboutique') {
 
         await interaction.reply({
             content: `✅ **${amount} ${MONEY_NAME}s** retirés à ${target}.`,
-            ephemeral: true
+            flags: 64
         });
 
         await sendLog(`🏦 **Retrait manuel de ${MONEY_NAME}s**
@@ -932,7 +967,7 @@ if (interaction.commandName === 'viderboutique') {
         if (!hasTeamRole(interaction.member)) {
             return interaction.reply({
                 content: '❌ Vous n’avez pas l’autorisation d’utiliser cette commande.',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -943,7 +978,7 @@ if (interaction.commandName === 'viderboutique') {
 
         await interaction.reply({
             content: `✅ ${target} est maintenant associé au pseudo Twitch **${pseudo}**.`,
-            ephemeral: true
+            flags: 64
         });
 
         await sendContestLog(`🔗 **Association Twitch**
@@ -957,7 +992,7 @@ if (interaction.commandName === 'viderboutique') {
         if (!hasTeamRole(interaction.member)) {
             return interaction.reply({
                 content: '❌ Vous n’avez pas l’autorisation d’utiliser cette commande.',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -969,7 +1004,7 @@ if (interaction.commandName === 'viderboutique') {
 
         await interaction.reply({
             content: `✅ **${amount} Tickets du Chaos** ajoutés à ${target}.`,
-            ephemeral: true
+            flags: 64
         });
 
         await sendContestLog(`🎟️ **Ajout manuel de Tickets**
@@ -984,7 +1019,7 @@ if (interaction.commandName === 'retticket') {
     if (!hasTeamRole(interaction.member)) {
         return interaction.reply({
             content: '❌ Vous n’avez pas l’autorisation d’utiliser cette commande.',
-            ephemeral: true
+           flags: 64
         });
     }
 
@@ -996,7 +1031,7 @@ if (interaction.commandName === 'retticket') {
 
     await interaction.reply({
         content: `✅ **${amount} Tickets du Chaos** retirés à ${target}.`,
-        ephemeral: true
+        flags: 64
     });
 
     await sendContestLog(`🎟️ **Retrait manuel de Tickets**
@@ -1011,7 +1046,7 @@ if (interaction.commandName === 'retticket') {
         if (!hasTeamRole(interaction.member)) {
             return interaction.reply({
                 content: '❌ Vous n’avez pas l’autorisation d’utiliser cette commande.',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -1036,7 +1071,7 @@ Messages : **+2 Tickets tous les 10 messages non-spam**`);
         if (!hasTeamRole(interaction.member)) {
             return interaction.reply({
                 content: '❌ Vous n’avez pas l’autorisation d’utiliser cette commande.',
-                ephemeral: true
+                flags: 64
             });
         }
 
