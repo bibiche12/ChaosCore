@@ -9,7 +9,11 @@ const {
     SlashCommandBuilder,
     ActionRowBuilder,
     ButtonBuilder,
-    ButtonStyle
+    ButtonStyle,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle,
+    StringSelectMenuBuilder
 } = require('discord.js');
 
 const axios = require('axios');
@@ -100,6 +104,7 @@ let currentLive = {
 
 let twitchCooldowns = new Map();
 
+let pendingRolePurchases = new Map();
 // ==========================
 // DATABASE
 // ==========================
@@ -673,6 +678,145 @@ client.on(Events.MessageCreate, async message => {
 // ==========================
 
 client.on(Events.InteractionCreate, async interaction => {
+    if (interaction.isButton()) {
+
+        if (interaction.customId === 'shop_buy_emoji') {
+            return interaction.reply({
+                content: '🎨 Tu as choisi : **Emoji personnalisé**.\n\nCette étape arrive bientôt.',
+                flags: 64
+            });
+        }
+
+        if (interaction.customId === 'shop_buy_role') {
+            const modal = new ModalBuilder()
+                .setCustomId('role_name_modal')
+                .setTitle('Créer un rôle temporaire');
+
+            const roleNameInput = new TextInputBuilder()
+                .setCustomId('role_name')
+                .setLabel('Nom du rôle')
+                .setPlaceholder('Exemple : Bibiche Alpha')
+                .setStyle(TextInputStyle.Short)
+                .setMaxLength(20)
+                .setRequired(true);
+
+            const row = new ActionRowBuilder().addComponents(roleNameInput);
+
+            modal.addComponents(row);
+
+            return interaction.showModal(modal);
+        }
+
+        if (interaction.customId === 'shop_buy_gage') {
+            return interaction.reply({
+                content: '😈 Tu as choisi : **Gage imposé**.\n\nCette étape arrive bientôt.',
+                flags: 64
+            });
+        }
+
+        if (interaction.customId === 'shop_buy_phrase') {
+            return interaction.reply({
+                content: '📢 Tu as choisi : **Phrase épinglée sur le live**.\n\nCette étape arrive bientôt.',
+                flags: 64
+            });
+        }
+    }
+
+    if (interaction.isModalSubmit()) {
+
+        if (interaction.customId === 'role_name_modal') {
+            const roleName = interaction.fields.getTextInputValue('role_name');
+pendingRolePurchases.set(interaction.user.id, {
+    roleName: roleName,
+    duration: null,
+    color: null,
+    price: null
+});
+            const durationMenu = new StringSelectMenuBuilder()
+    .setCustomId(`role_duration_${roleName}`)
+    .setPlaceholder('Choisis la durée')
+    .addOptions(
+        {
+            label: '1 semaine',
+            description: '50 Bichcoins',
+            value: '7_50'
+        },
+        {
+            label: '2 semaines',
+            description: '75 Bichcoins',
+            value: '14_75'
+        },
+        {
+            label: '1 mois',
+            description: '150 Bichcoins',
+            value: '30_150'
+        }
+    );
+
+const colorMenu = new StringSelectMenuBuilder()
+    .setCustomId(`role_color_${roleName}`)
+    .setPlaceholder('Choisis la couleur')
+    .addOptions(
+        { label: 'Rouge', value: 'red' },
+        { label: 'Orange', value: 'orange' },
+        { label: 'Jaune', value: 'yellow' },
+        { label: 'Vert', value: 'green' },
+        { label: 'Bleu', value: 'blue' },
+        { label: 'Violet', value: 'purple' },
+        { label: 'Rose', value: 'pink' },
+        { label: 'Noir', value: 'black' },
+        { label: 'Blanc', value: 'white' },
+        { label: 'Marron', value: 'brown' }
+    );
+
+return interaction.reply({
+    content: `👑 Nom du rôle choisi : **${roleName}**
+
+Choisis maintenant la durée et la couleur.`,
+    components: [
+        new ActionRowBuilder().addComponents(durationMenu),
+        new ActionRowBuilder().addComponents(colorMenu)
+    ],
+    flags: 64
+});
+    }
+}
+if (interaction.isStringSelectMenu()) {
+
+    const purchase = pendingRolePurchases.get(interaction.user.id);
+
+    if (!purchase) {
+        return interaction.reply({
+            content: '❌ Aucune création de rôle en cours.',
+            flags: 64
+        });
+    }
+
+    if (interaction.customId.startsWith('role_duration_')) {
+        const [days, price] = interaction.values[0].split('_');
+
+        purchase.duration = Number(days);
+        purchase.price = Number(price);
+
+        pendingRolePurchases.set(interaction.user.id, purchase);
+
+        return interaction.reply({
+            content: `⏳ Durée sélectionnée : **${days} jours** — **${price} Bichcoins**`,
+            flags: 64
+        });
+    }
+
+    if (interaction.customId.startsWith('role_color_')) {
+        purchase.color = interaction.values[0];
+
+        pendingRolePurchases.set(interaction.user.id, purchase);
+
+        return interaction.reply({
+            content: `🎨 Couleur sélectionnée : **${purchase.color}**`,
+            flags: 64
+        });
+    }
+}
     if (!interaction.isChatInputCommand()) return;
 
     if (interaction.commandName === 'ping') {
