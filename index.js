@@ -197,6 +197,26 @@ async function getTicketUser(userId) {
 
     return result.rows[0];
 }
+async function getShopMessage(itemName) {
+    const result = await pool.query(
+        'SELECT * FROM shop_messages WHERE item_name = $1',
+        [itemName]
+    );
+
+    return result.rows[0] || null;
+}
+
+async function saveShopMessage(itemName, messageId, channelId) {
+    await pool.query(
+        `INSERT INTO shop_messages (item_name, message_id, channel_id)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (item_name)
+         DO UPDATE SET
+            message_id = EXCLUDED.message_id,
+            channel_id = EXCLUDED.channel_id`,
+        [itemName, messageId, channelId]
+    );
+}
 
 async function addTickets(userId, amount, type = 'manual') {
     await getTicketUser(userId);
@@ -684,7 +704,7 @@ if (interaction.commandName === 'profil') {
     });
 }
 if (interaction.commandName === 'setupboutique') {
-
+await interaction.deferReply({ ephemeral: true });
     if (!hasTeamRole(interaction.member)) {
         return interaction.reply({
             content: '❌ Vous n’avez pas l’autorisation d’utiliser cette commande.',
@@ -701,25 +721,52 @@ if (interaction.commandName === 'setupboutique') {
         });
     }
 
-    await shopChannel.send({
-        content: `🏦 **Boutique Oncle'Bich**
+    const introContent = `🏦 **Boutique Oncle'Bich**
 
 Bienvenue dans la boutique officielle des Bichcoins.
-Cliquez sur les boutons pour préparer vos futurs achats.`
-    });
+Cliquez sur les boutons pour préparer vos futurs achats.`;
 
-    await shopChannel.send({
-        content: `🎨 **Emoji personnalisé**
+const existingIntroMessage = await getShopMessage('intro');
+
+if (existingIntroMessage) {
+    const oldMessage = await shopChannel.messages.fetch(existingIntroMessage.message_id).catch(() => null);
+
+    if (oldMessage) {
+        await oldMessage.edit({ content: introContent });
+    } else {
+        const newMessage = await shopChannel.send({ content: introContent });
+        await saveShopMessage('intro', newMessage.id, shopChannel.id);
+    }
+} else {
+    const newMessage = await shopChannel.send({ content: introContent });
+    await saveShopMessage('intro', newMessage.id, shopChannel.id);
+}
+
+    const emojiContent = `🎨 **Emoji personnalisé**
 
 💰 Prix : **100 Bichcoins**
 📌 Validation : manuelle
 📎 Image à fournir au moment de la demande
 
-[Image temporaire : 🎨]`
-    });
+[Image temporaire : 🎨]`;
 
-    await shopChannel.send({
-        content: `👑 **Rôle temporaire personnalisé**
+const existingEmojiMessage = await getShopMessage('emoji');
+console.log('🛒 Message emoji existant :', existingEmojiMessage);
+if (existingEmojiMessage) {
+    const oldMessage = await shopChannel.messages.fetch(existingEmojiMessage.message_id).catch(() => null);
+
+    if (oldMessage) {
+        await oldMessage.edit({ content: emojiContent });
+    } else {
+        const newMessage = await shopChannel.send({ content: emojiContent });
+        await saveShopMessage('emoji', newMessage.id, shopChannel.id);
+    }
+} else {
+    const newMessage = await shopChannel.send({ content: emojiContent });
+    await saveShopMessage('emoji', newMessage.id, shopChannel.id);
+}
+
+    const roleContent = `👑 **Rôle temporaire personnalisé**
 
 💰 1 semaine : **50 Bichcoins**
 💰 2 semaines : **75 Bichcoins**
@@ -728,34 +775,80 @@ Cliquez sur les boutons pour préparer vos futurs achats.`
 🎨 Couleurs disponibles :
 🔴 🟠 🟡 🟢 🔵 🟣 🩷 ⚫ ⚪ 🟤
 
-[Image temporaire : 👑]`
-    });
+[Image temporaire : 👑]`;
 
-    await shopChannel.send({
-        content: `😈 **Gage imposé**
+const existingRoleMessage = await getShopMessage('role');
+
+if (existingRoleMessage) {
+    const oldMessage = await shopChannel.messages.fetch(existingRoleMessage.message_id).catch(() => null);
+
+    if (oldMessage) {
+        await oldMessage.edit({ content: roleContent });
+    } else {
+        const newMessage = await shopChannel.send({ content: roleContent });
+        await saveShopMessage('role', newMessage.id, shopChannel.id);
+    }
+} else {
+    const newMessage = await shopChannel.send({ content: roleContent });
+    await saveShopMessage('role', newMessage.id, shopChannel.id);
+}
+
+
+   const gageContent = `😈 **Gage imposé**
 
 💰 Prix : **200 Bichcoins**
 📌 Validation : manuelle
 
-[Image temporaire : 😈]`
-    });
+[Image temporaire : 😈]`;
 
-    await shopChannel.send({
-        content: `📢 **Phrase épinglée sur le live**
+const existingGageMessage = await getShopMessage('gage');
+
+if (existingGageMessage) {
+    const oldMessage = await shopChannel.messages.fetch(existingGageMessage.message_id).catch(() => null);
+
+    if (oldMessage) {
+        await oldMessage.edit({ content: gageContent });
+    } else {
+        const newMessage = await shopChannel.send({ content: gageContent });
+        await saveShopMessage('gage', newMessage.id, shopChannel.id);
+    }
+} else {
+    const newMessage = await shopChannel.send({ content: gageContent });
+    await saveShopMessage('gage', newMessage.id, shopChannel.id);
+}
+
+const phraseContent = `📢 **Phrase épinglée sur le live**
 
 💰 1 live : **300 Bichcoins**
 💰 2 lives : **550 Bichcoins**
 📌 Validation : manuelle
 
-[Image temporaire : 📢]`
-    });
+[Image temporaire : 📢]`;
 
-    await interaction.reply({
-        content: '✅ Boutique Oncle’Bich installée dans le salon boutique.',
-        ephemeral: true
+const existingPhraseMessage = await getShopMessage('phrase');
+
+if (existingPhraseMessage) {
+    const oldMessage = await shopChannel.messages.fetch(existingPhraseMessage.message_id).catch(() => null);
+
+    if (oldMessage) {
+        await oldMessage.edit({ content: phraseContent });
+    } else {
+        const newMessage = await shopChannel.send({ content: phraseContent });
+        await saveShopMessage('phrase', newMessage.id, shopChannel.id);
+    }
+} else {
+    const newMessage = await shopChannel.send({ content: phraseContent });
+    await saveShopMessage('phrase', newMessage.id, shopChannel.id);
+}
+
+    await interaction.editReply({
+        content: '✅ Boutique Oncle’Bich installée / mise à jour dans le salon boutique.'
     });
 }
+
 if (interaction.commandName === 'viderboutique') {
+
+    await interaction.deferReply({ ephemeral: true });
 
     if (!hasTeamRole(interaction.member)) {
         return interaction.reply({
@@ -776,10 +869,9 @@ if (interaction.commandName === 'viderboutique') {
     const messages = await shopChannel.messages.fetch({ limit: 100 });
     await shopChannel.bulkDelete(messages, true);
 
-    await interaction.reply({
-        content: '🧹 Boutique Oncle’Bich vidée.',
-        ephemeral: true
-    });
+    await interaction.editReply({
+    content: '🧹 Boutique Oncle’Bich vidée.'
+});
 }
 
     if (interaction.commandName === 'adpoint') {
