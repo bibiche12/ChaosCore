@@ -212,6 +212,17 @@ async function addTickets(userId, amount, type = 'manual') {
         );
     }
 }
+async function removeTickets(userId, amount) {
+    await getTicketUser(userId);
+
+    await pool.query(
+        `UPDATE tickets
+         SET tickets = GREATEST(tickets - $2, 0),
+             manual = GREATEST(manual - $2, 0)
+         WHERE user_id = $1`,
+        [userId, amount]
+    );
+}
 
 async function addPresenceTicket(userId) {
     await getTicketUser(userId);
@@ -341,7 +352,19 @@ const commands = [
         .addStringOption(option =>
             option.setName('raison').setDescription('Raison').setRequired(true)
         ),
-
+new SlashCommandBuilder()
+    .setName('retticket')
+    .setDescription('Retirer des Tickets du Chaos à un membre')
+    .addUserOption(option =>
+        option.setName('membre').setDescription('Membre à débiter').setRequired(true)
+    )
+    .addIntegerOption(option =>
+        option.setName('montant').setDescription('Nombre de tickets').setRequired(true).setMinValue(1)
+    )
+    .addStringOption(option =>
+        option.setName('raison').setDescription('Raison').setRequired(true)
+    ),
+    
     new SlashCommandBuilder()
         .setName('live')
         .setDescription('Démarrer le comptage Tickets du Chaos'),
@@ -734,6 +757,33 @@ client.on(Events.InteractionCreate, async interaction => {
 📝 Raison : ${reason}
 👑 Par : ${interaction.user}`);
     }
+if (interaction.commandName === 'retticket') {
+
+    if (!hasTeamRole(interaction.member)) {
+        return interaction.reply({
+            content: '❌ Vous n’avez pas l’autorisation d’utiliser cette commande.',
+            ephemeral: true
+        });
+    }
+
+    const target = interaction.options.getUser('membre');
+    const amount = interaction.options.getInteger('montant');
+    const reason = interaction.options.getString('raison');
+
+    await removeTickets(target.id, amount);
+
+    await interaction.reply({
+        content: `✅ **${amount} Tickets du Chaos** retirés à ${target}.`,
+        ephemeral: true
+    });
+
+    await sendContestLog(`🎟️ **Retrait manuel de Tickets**
+
+👤 Membre : ${target}
+➖ Montant : **${amount} Tickets**
+📝 Raison : ${reason}
+👑 Par : ${interaction.user}`);
+}
 
     if (interaction.commandName === 'live') {
         if (!hasTeamRole(interaction.member)) {
