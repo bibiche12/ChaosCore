@@ -303,6 +303,9 @@ const commands = [
     new SlashCommandBuilder()
         .setName('solde')
         .setDescription('Voir ton solde de Bichcoins'),
+new SlashCommandBuilder()
+    .setName('profil')
+    .setDescription('Voir ton profil ChaosCore'),
 
     new SlashCommandBuilder()
         .setName('adpoint')
@@ -651,6 +654,23 @@ client.on(Events.InteractionCreate, async interaction => {
             ephemeral: true
         });
     }
+if (interaction.commandName === 'profil') {
+
+    const pointsData = await getUserPoints(interaction.user.id);
+    const ticketData = await getTicketUser(interaction.user.id);
+
+    await interaction.reply({
+        content: `👤 **Profil ChaosCore**
+
+🏦 Bichcoins : **${pointsData.balance}**
+🎟️ Tickets du Chaos : **${ticketData.tickets}**
+
+💬 Messages Twitch : **${ticketData.twitch_messages || 0}**
+🔴 Présences Live : **${ticketData.presences || 0}**
+✍️ Tickets manuels : **${ticketData.manual || 0}**`,
+        ephemeral: true
+    });
+}
 
     if (interaction.commandName === 'adpoint') {
         if (!hasTeamRole(interaction.member)) {
