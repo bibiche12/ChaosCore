@@ -679,7 +679,15 @@ client.on(Events.MessageCreate, async message => {
 
 client.on(Events.InteractionCreate, async interaction => {
     if (interaction.isButton()) {
+if (interaction.customId.startsWith('cancel_role_purchase_')) {
 
+    pendingRolePurchases.delete(interaction.user.id);
+
+    return interaction.reply({
+        content: '❌ Achat annulé. Aucun Bichcoin n’a été débité.',
+        flags: 64
+    });
+}
         if (interaction.customId === 'shop_buy_emoji') {
             return interaction.reply({
                 content: '🎨 Tu as choisi : **Emoji personnalisé**.\n\nCette étape arrive bientôt.',
@@ -799,23 +807,60 @@ if (interaction.isStringSelectMenu()) {
         purchase.price = Number(price);
 
         pendingRolePurchases.set(interaction.user.id, purchase);
-
-        return interaction.reply({
-            content: `⏳ Durée sélectionnée : **${days} jours** — **${price} Bichcoins**`,
-            flags: 64
-        });
     }
 
     if (interaction.customId.startsWith('role_color_')) {
         purchase.color = interaction.values[0];
 
         pendingRolePurchases.set(interaction.user.id, purchase);
+    }
 
+    if (!purchase.duration || !purchase.color) {
         return interaction.reply({
-            content: `🎨 Couleur sélectionnée : **${purchase.color}**`,
+            content: '✅ Choix enregistré. Sélectionne maintenant l’autre option.',
             flags: 64
         });
     }
+
+    const colorNames = {
+        red: 'Rouge',
+        orange: 'Orange',
+        yellow: 'Jaune',
+        green: 'Vert',
+        blue: 'Bleu',
+        purple: 'Violet',
+        pink: 'Rose',
+        black: 'Noir',
+        white: 'Blanc',
+        brown: 'Marron'
+    };
+
+    const confirmButtons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId(`confirm_role_purchase_${interaction.user.id}`)
+                .setLabel('Confirmer')
+                .setEmoji('✅')
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId(`cancel_role_purchase_${interaction.user.id}`)
+                .setLabel('Annuler')
+                .setEmoji('❌')
+                .setStyle(ButtonStyle.Danger)
+        );
+
+    return interaction.reply({
+        content: `👑 **Récapitulatif de l'achat**
+
+🏷️ Nom du rôle : **${purchase.roleName}**
+🎨 Couleur : **${colorNames[purchase.color] || purchase.color}**
+⏳ Durée : **${purchase.duration} jours**
+💰 Prix : **${purchase.price} Bichcoins**
+
+Confirme ton achat ou annule la demande.`,
+        components: [confirmButtons],
+        flags: 64
+    });
 }
     if (!interaction.isChatInputCommand()) return;
 
