@@ -126,7 +126,13 @@ async function initDatabase() {
             user_id TEXT NOT NULL
         );
     `);
-
+await pool.query(`
+    CREATE TABLE IF NOT EXISTS shop_messages (
+        item_name TEXT PRIMARY KEY,
+        message_id TEXT NOT NULL,
+        channel_id TEXT NOT NULL
+    );
+`);
     console.log('✅ Base PostgreSQL prête');
 }
 
@@ -306,6 +312,12 @@ const commands = [
 new SlashCommandBuilder()
     .setName('profil')
     .setDescription('Voir ton profil ChaosCore'),
+new SlashCommandBuilder()
+    .setName('setupboutique')
+    .setDescription('Installer ou mettre à jour la boutique Oncle\'Bich'),
+new SlashCommandBuilder()
+    .setName('viderboutique')
+    .setDescription('Vider le salon boutique Oncle\'Bich'),
 
     new SlashCommandBuilder()
         .setName('adpoint')
@@ -668,6 +680,104 @@ if (interaction.commandName === 'profil') {
 💬 Messages Twitch : **${ticketData.twitch_messages || 0}**
 🔴 Présences Live : **${ticketData.presences || 0}**
 ✍️ Tickets manuels : **${ticketData.manual || 0}**`,
+        ephemeral: true
+    });
+}
+if (interaction.commandName === 'setupboutique') {
+
+    if (!hasTeamRole(interaction.member)) {
+        return interaction.reply({
+            content: '❌ Vous n’avez pas l’autorisation d’utiliser cette commande.',
+            ephemeral: true
+        });
+    }
+
+    const shopChannel = await client.channels.fetch('1510994478394245162').catch(() => null);
+
+    if (!shopChannel) {
+        return interaction.reply({
+            content: '❌ Salon boutique introuvable.',
+            ephemeral: true
+        });
+    }
+
+    await shopChannel.send({
+        content: `🏦 **Boutique Oncle'Bich**
+
+Bienvenue dans la boutique officielle des Bichcoins.
+Cliquez sur les boutons pour préparer vos futurs achats.`
+    });
+
+    await shopChannel.send({
+        content: `🎨 **Emoji personnalisé**
+
+💰 Prix : **100 Bichcoins**
+📌 Validation : manuelle
+📎 Image à fournir au moment de la demande
+
+[Image temporaire : 🎨]`
+    });
+
+    await shopChannel.send({
+        content: `👑 **Rôle temporaire personnalisé**
+
+💰 1 semaine : **50 Bichcoins**
+💰 2 semaines : **75 Bichcoins**
+💰 1 mois : **150 Bichcoins**
+
+🎨 Couleurs disponibles :
+🔴 🟠 🟡 🟢 🔵 🟣 🩷 ⚫ ⚪ 🟤
+
+[Image temporaire : 👑]`
+    });
+
+    await shopChannel.send({
+        content: `😈 **Gage imposé**
+
+💰 Prix : **200 Bichcoins**
+📌 Validation : manuelle
+
+[Image temporaire : 😈]`
+    });
+
+    await shopChannel.send({
+        content: `📢 **Phrase épinglée sur le live**
+
+💰 1 live : **300 Bichcoins**
+💰 2 lives : **550 Bichcoins**
+📌 Validation : manuelle
+
+[Image temporaire : 📢]`
+    });
+
+    await interaction.reply({
+        content: '✅ Boutique Oncle’Bich installée dans le salon boutique.',
+        ephemeral: true
+    });
+}
+if (interaction.commandName === 'viderboutique') {
+
+    if (!hasTeamRole(interaction.member)) {
+        return interaction.reply({
+            content: '❌ Vous n’avez pas l’autorisation d’utiliser cette commande.',
+            ephemeral: true
+        });
+    }
+
+    const shopChannel = await client.channels.fetch('1510994478394245162').catch(() => null);
+
+    if (!shopChannel) {
+        return interaction.reply({
+            content: '❌ Salon boutique introuvable.',
+            ephemeral: true
+        });
+    }
+
+    const messages = await shopChannel.messages.fetch({ limit: 100 });
+    await shopChannel.bulkDelete(messages, true);
+
+    await interaction.reply({
+        content: '🧹 Boutique Oncle’Bich vidée.',
         ephemeral: true
     });
 }
