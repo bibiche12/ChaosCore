@@ -105,6 +105,7 @@ let currentLive = {
 let twitchCooldowns = new Map();
 
 let pendingRolePurchases = new Map();
+let pendingEmojiRequests = new Map();
 // ==========================
 // DATABASE
 // ==========================
@@ -149,6 +150,16 @@ await pool.query(`
         guild_id TEXT NOT NULL,
         role_name TEXT NOT NULL,
         expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+`);
+await pool.query(`
+    CREATE TABLE IF NOT EXISTS emoji_requests (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        emoji_name TEXT NOT NULL,
+        image_url TEXT,
+        status TEXT DEFAULT 'pending',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 `);
@@ -728,7 +739,66 @@ console.log('✅ Vérification des rôles temporaires activée');
 client.on(Events.MessageCreate, async message => {
     if (message.author.bot) return;
     if (!message.guild) return;
+const pendingEmoji = pendingEmojiRequests.get(message.author.id);
 
+if (pendingEmoji && message.attachments.size > 0) {
+    const attachment = message.attachments.first();
+
+    pendingEmoji.imageUrl = attachment.url;
+
+    const insertResult = await pool.query(
+        `INSERT INTO emoji_requests
+        (user_id, emoji_name, image_url)
+        VALUES ($1, $2, $3)
+        RETURNING id`,
+        [
+            message.author.id,
+            pendingEmoji.emojiName,
+            pendingEmoji.imageUrl
+        ]
+    );
+
+    const requestId = insertResult.rows[0].id;
+
+    const emojiValidationButtons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId(`approve_emoji_${requestId}`)
+                .setLabel('Accepter')
+                .setEmoji('✅')
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId(`reject_emoji_${requestId}`)
+                .setLabel('Refuser')
+                .setEmoji('❌')
+                .setStyle(ButtonStyle.Danger)
+        );
+
+    const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+
+    if (logChannel) {
+        await logChannel.send({
+            content: `🎨 **Nouvelle demande d'emoji personnalisé**
+
+👤 Membre : ${message.author}
+🏷️ Nom demandé : **:${pendingEmoji.emojiName}:**
+💰 Prix : **100 Bichcoins**
+🖼️ Image : ${pendingEmoji.imageUrl}
+
+✅ Accepter pour créer l'emoji
+❌ Refuser pour annuler la demande`,
+            components: [emojiValidationButtons]
+        });
+    }
+
+    pendingEmojiRequests.delete(message.author.id);
+
+    await message.reply(`✅ Image reçue pour l’emoji **:${pendingEmoji.emojiName}:**.
+
+Ta demande a été envoyée à la Team pour validation.`);
+
+    return;
+}
     if (!ALLOWED_MONEY_CHANNELS.includes(message.channel.id)) return;
 
     const userId = message.author.id;
@@ -828,13 +898,153 @@ return interaction.reply({
     flags: 64
 });
 }
-        if (interaction.customId === 'shop_buy_emoji') {
-            return interaction.reply({
-                content: '🎨 Tu as choisi : **Emoji personnalisé**.\n\nCette étape arrive bientôt.',
-                flags: 64
-            });
-        }
+if (interaction.customId.startsWith('reject_emoji_')) {
 
+    const requestId = interaction.customId.split('_')[2];
+
+    await pool.query(
+        `UPDATE emoji_requests
+         SET status = 'rejected'
+         WHERE id = $1`,
+        [requestId]
+    );
+
+    return interaction.reply({
+        content: '❌ Demande d’emoji refusée.',
+        flags: 64
+    });
+}
+      if (interaction.customId.startsWith('reject_emoji_')) {
+
+    const requestId = interaction.customId.split('_')[2];
+
+    await pool.query(
+        `UPDATE emoji_requests
+         SET status = 'rejected'
+         WHERE id = $1`,
+        [requestId]
+    );
+
+    return interaction.reply({
+        content: '❌ Demande d’emoji refusée.',
+        flags: 64
+    });
+}
+
+if (interaction.customId.startsWith('approve_emoji_')) {
+
+    const requestId = interaction.customId.split('_')[2];
+
+    const result = await pool.query(
+        `SELECT * FROM emoji_requests WHERE id = $1`,
+        [requestId]
+    );
+
+    const request = result.rows[0];
+
+    if (!request) {
+        return interaction.reply({
+            content: '❌ Demande introuvable.',
+            flags: 64
+        });
+    }
+
+    if (request.status !== 'pending') {
+        return interaction.reply({
+            content: '❌ Cette demande a déjà été traitée.',
+            flags: 64
+        });
+    }
+
+    const userPoints = await getUserPoints(request.user_id);
+
+    if (userPoints.balance < 100) {
+        await pool.query(
+            `UPDATE emoji_requests
+             SET status = 'rejected'
+             WHERE id = $1`,
+            [requestId]
+        );
+
+        return interaction.reply({
+            content: `❌ Demande refusée automatiquement : solde insuffisant.
+
+👤 Membre : <@${request.user_id}>
+💰 Solde : **${userPoints.balance} Bichcoins**
+🎨 Prix : **100 Bichcoins**`,
+            flags: 64
+        });
+    }
+
+    const imageResponse = await axios.get(request.image_url, {
+        responseType: 'arraybuffer'
+    });
+
+    const emoji = await interaction.guild.emojis.create({
+        attachment: Buffer.from(imageResponse.data),
+        name: request.emoji_name,
+        reason: `Emoji personnalisé acheté par ${request.user_id}`
+    });
+
+    await addPoints(request.user_id, -100);
+
+    await pool.query(
+        `UPDATE emoji_requests
+         SET status = 'approved'
+         WHERE id = $1`,
+        [requestId]
+    );
+
+    const member = await interaction.guild.members.fetch(request.user_id).catch(() => null);
+
+    if (member) {
+        member.send(`🎨 Ton emoji personnalisé **:${request.emoji_name}:** a été accepté et créé sur le serveur !
+
+Emoji : ${emoji}`).catch(() => null);
+    }
+
+    return interaction.reply({
+        content: `✅ Emoji créé avec succès !
+
+👤 Membre : <@${request.user_id}>
+🎨 Emoji : ${emoji}
+💰 **100 Bichcoins** débités.`,
+        flags: 64
+    });
+}
+
+if (interaction.customId === 'shop_buy_emoji') {
+
+    const userPoints = await getUserPoints(interaction.user.id);
+
+    if (userPoints.balance < 100) {
+        return interaction.reply({
+            content: `❌ Solde insuffisant.
+
+💰 Ton solde : **${userPoints.balance} Bichcoins**
+🎨 Prix : **100 Bichcoins**`,
+            flags: 64
+        });
+    }
+
+    const modal = new ModalBuilder()
+        .setCustomId('emoji_name_modal')
+        .setTitle('Emoji personnalisé');
+
+    const emojiNameInput = new TextInputBuilder()
+        .setCustomId('emoji_name')
+        .setLabel('Nom de l’emoji')
+        .setPlaceholder('Exemple : bibichelove')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(30)
+        .setRequired(true);
+
+    const row = new ActionRowBuilder().addComponents(emojiNameInput);
+
+    modal.addComponents(row);
+
+    return interaction.showModal(modal);
+}
         if (interaction.customId === 'shop_buy_role') {
             const modal = new ModalBuilder()
                 .setCustomId('role_name_modal')
@@ -927,6 +1137,22 @@ Choisis maintenant la durée et la couleur.`,
     ],
     flags: 64
 });
+}
+if (interaction.customId === 'emoji_name_modal') {
+        const emojiName = interaction.fields.getTextInputValue('emoji_name').toLowerCase();
+
+        pendingEmojiRequests.set(interaction.user.id, {
+            emojiName: emojiName,
+            price: 100
+        });
+
+        return interaction.reply({
+            content: `🎨 Emoji demandé : **:${emojiName}:**
+
+Maintenant, envoie l’image de ton emoji dans ce salon.
+⚠️ La Team validera la demande avant création.`,
+            flags: 64
+        });
     }
 }
 if (interaction.isStringSelectMenu()) {
