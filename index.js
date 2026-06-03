@@ -72,6 +72,7 @@ const MONEY_NAME = 'Bichcoin';
 const TEAM_ROLE_NAME = '👑 Team';
 
 const LOG_CHANNEL_ID = '1510994452972310708';
+const LIVE_AUTO_CHANNEL_ID = '1503664842400206978';
 
 const ALLOWED_MONEY_CHANNELS = [
     '1503703021832507452',
@@ -159,6 +160,17 @@ await pool.query(`
         user_id TEXT NOT NULL,
         emoji_name TEXT NOT NULL,
         image_url TEXT,
+        status TEXT DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+`);
+await pool.query(`
+    CREATE TABLE IF NOT EXISTS shop_requests (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        content TEXT NOT NULL,
+        price INTEGER NOT NULL,
         status TEXT DEFAULT 'pending',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -914,22 +926,6 @@ if (interaction.customId.startsWith('reject_emoji_')) {
         flags: 64
     });
 }
-      if (interaction.customId.startsWith('reject_emoji_')) {
-
-    const requestId = interaction.customId.split('_')[2];
-
-    await pool.query(
-        `UPDATE emoji_requests
-         SET status = 'rejected'
-         WHERE id = $1`,
-        [requestId]
-    );
-
-    return interaction.reply({
-        content: '❌ Demande d’emoji refusée.',
-        flags: 64
-    });
-}
 
 if (interaction.customId.startsWith('approve_emoji_')) {
 
@@ -1064,81 +1060,246 @@ if (interaction.customId === 'shop_buy_emoji') {
 
             return interaction.showModal(modal);
         }
+if (interaction.customId.startsWith('reject_shop_')) {
 
-        if (interaction.customId === 'shop_buy_gage') {
-            return interaction.reply({
-                content: '😈 Tu as choisi : **Gage imposé**.\n\nCette étape arrive bientôt.',
-                flags: 64
-            });
-        }
+    const requestId = interaction.customId.split('_')[2];
 
-        if (interaction.customId === 'shop_buy_phrase') {
-            return interaction.reply({
-                content: '📢 Tu as choisi : **Phrase épinglée sur le live**.\n\nCette étape arrive bientôt.',
-                flags: 64
-            });
-        }
+    await pool.query(
+        `UPDATE shop_requests
+         SET status = 'rejected'
+         WHERE id = $1`,
+        [requestId]
+    );
+
+    return interaction.reply({
+        content: '❌ Demande refusée. Aucun Bichcoin n’a été débité.',
+        flags: 64
+    });
+}
+if (interaction.customId.startsWith('finish_shop_')) {
+
+    await interaction.message.delete().catch(() => null);
+
+    return interaction.reply({
+        content: '✅ Élément terminé et retiré du live.',
+        flags: 64
+    });
+}
+if (interaction.customId.startsWith('approve_shop_')) {
+
+    const requestId = interaction.customId.split('_')[2];
+
+    const result = await pool.query(
+        `SELECT * FROM shop_requests WHERE id = $1`,
+        [requestId]
+    );
+
+    const request = result.rows[0];
+
+    if (!request) {
+        return interaction.reply({
+            content: '❌ Demande introuvable.',
+            flags: 64
+        });
     }
 
-    if (interaction.isModalSubmit()) {
+    if (request.status !== 'pending') {
+        return interaction.reply({
+            content: '❌ Cette demande a déjà été traitée.',
+            flags: 64
+        });
+    }
 
-        if (interaction.customId === 'role_name_modal') {
-            const roleName = interaction.fields.getTextInputValue('role_name');
-pendingRolePurchases.set(interaction.user.id, {
-    roleName: roleName,
-    duration: null,
-    color: null,
-    price: null
-});
-            const durationMenu = new StringSelectMenuBuilder()
-    .setCustomId(`role_duration_${roleName}`)
-    .setPlaceholder('Choisis la durée')
-    .addOptions(
-        {
-            label: '1 semaine',
-            description: '50 Bichcoins',
-            value: '7_50'
-        },
-        {
-            label: '2 semaines',
-            description: '75 Bichcoins',
-            value: '14_75'
-        },
-        {
-            label: '1 mois',
-            description: '150 Bichcoins',
-            value: '30_150'
-        }
+    const userPoints = await getUserPoints(request.user_id);
+
+    if (userPoints.balance < request.price) {
+        await pool.query(
+            `UPDATE shop_requests
+             SET status = 'rejected'
+             WHERE id = $1`,
+            [requestId]
+        );
+
+        return interaction.reply({
+            content: `❌ Demande refusée automatiquement : solde insuffisant.
+
+👤 Membre : <@${request.user_id}>
+💰 Solde : **${userPoints.balance} Bichcoins**
+🏷️ Prix : **${request.price} Bichcoins**`,
+            flags: 64
+        });
+    }
+
+    await addPoints(request.user_id, -request.price);
+
+    await pool.query(
+        `UPDATE shop_requests
+         SET status = 'approved'
+         WHERE id = $1`,
+        [requestId]
+    );
+const liveChannel = await client.channels
+    .fetch(LIVE_AUTO_CHANNEL_ID)
+    .catch(() => null);
+
+if (liveChannel) {
+
+    const activeButtons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId(`finish_shop_${requestId}`)
+                .setLabel('Terminé')
+                .setEmoji('✅')
+                .setStyle(ButtonStyle.Success)
+        );
+
+    if (request.type === 'gage') {
+
+        await liveChannel.send({
+            content: `😈 **GAGE ACTIF**
+
+👤 <@${request.user_id}>
+
+${request.content}`,
+            components: [activeButtons]
+        });
+    }
+
+    if (request.type === 'phrase') {
+
+        await liveChannel.send({
+            content: `📢 **PHRASE LIVE ACTIVE**
+
+👤 <@${request.user_id}>
+
+${request.content}`,
+            components: [activeButtons]
+        });
+    }
+}
+    return interaction.reply({
+        content: `✅ Demande acceptée !
+
+👤 Membre : <@${request.user_id}>
+📌 Type : **${request.type}**
+💰 **${request.price} Bichcoins** débités.
+
+📝 Contenu :
+${request.content}`,
+        flags: 64
+    });
+}
+       if (interaction.customId === 'shop_buy_gage') {
+
+    const userPoints = await getUserPoints(interaction.user.id);
+
+    if (userPoints.balance < 200) {
+        return interaction.reply({
+            content: `❌ Solde insuffisant.
+
+💰 Ton solde : **${userPoints.balance} Bichcoins**
+😈 Prix : **200 Bichcoins**`,
+            flags: 64
+        });
+    }
+
+    const modal = new ModalBuilder()
+        .setCustomId('gage_modal')
+        .setTitle('Gage imposé');
+
+    const input = new TextInputBuilder()
+        .setCustomId('gage_text')
+        .setLabel('Décris le gage souhaité')
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true);
+
+    modal.addComponents(
+        new ActionRowBuilder().addComponents(input)
     );
 
-const colorMenu = new StringSelectMenuBuilder()
-    .setCustomId(`role_color_${roleName}`)
-    .setPlaceholder('Choisis la couleur')
-    .addOptions(
-        { label: 'Rouge', value: 'red' },
-        { label: 'Orange', value: 'orange' },
-        { label: 'Jaune', value: 'yellow' },
-        { label: 'Vert', value: 'green' },
-        { label: 'Bleu', value: 'blue' },
-        { label: 'Violet', value: 'purple' },
-        { label: 'Rose', value: 'pink' },
-        { label: 'Noir', value: 'black' },
-        { label: 'Blanc', value: 'white' },
-        { label: 'Marron', value: 'brown' }
+    return interaction.showModal(modal);
+}
+if (interaction.customId === 'shop_buy_phrase') {
+
+    const userPoints = await getUserPoints(interaction.user.id);
+
+    if (userPoints.balance < 300) {
+        return interaction.reply({
+            content: `❌ Solde insuffisant.
+
+💰 Ton solde : **${userPoints.balance} Bichcoins**
+📢 Prix minimum : **300 Bichcoins**`,
+            flags: 64
+        });
+    }
+
+    const modal = new ModalBuilder()
+        .setCustomId('phrase_modal')
+        .setTitle('Phrase épinglée');
+
+    const input = new TextInputBuilder()
+        .setCustomId('phrase_text')
+        .setLabel('Phrase à afficher')
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true);
+
+    modal.addComponents(
+        new ActionRowBuilder().addComponents(input)
     );
 
-return interaction.reply({
-    content: `👑 Nom du rôle choisi : **${roleName}**
+    return interaction.showModal(modal);
+}
+}
+if (interaction.isModalSubmit()) {
+
+    if (interaction.customId === 'role_name_modal') {
+        const roleName = interaction.fields.getTextInputValue('role_name');
+
+        pendingRolePurchases.set(interaction.user.id, {
+            roleName: roleName,
+            duration: null,
+            color: null,
+            price: null
+        });
+
+        const durationMenu = new StringSelectMenuBuilder()
+            .setCustomId(`role_duration_${roleName}`)
+            .setPlaceholder('Choisis la durée')
+            .addOptions(
+                { label: '1 semaine', description: '50 Bichcoins', value: '7_50' },
+                { label: '2 semaines', description: '75 Bichcoins', value: '14_75' },
+                { label: '1 mois', description: '150 Bichcoins', value: '30_150' }
+            );
+
+        const colorMenu = new StringSelectMenuBuilder()
+            .setCustomId(`role_color_${roleName}`)
+            .setPlaceholder('Choisis la couleur')
+            .addOptions(
+                { label: 'Rouge', value: 'red' },
+                { label: 'Orange', value: 'orange' },
+                { label: 'Jaune', value: 'yellow' },
+                { label: 'Vert', value: 'green' },
+                { label: 'Bleu', value: 'blue' },
+                { label: 'Violet', value: 'purple' },
+                { label: 'Rose', value: 'pink' },
+                { label: 'Noir', value: 'black' },
+                { label: 'Blanc', value: 'white' },
+                { label: 'Marron', value: 'brown' }
+            );
+
+        return interaction.reply({
+            content: `👑 Nom du rôle choisi : **${roleName}**
 
 Choisis maintenant la durée et la couleur.`,
-    components: [
-        new ActionRowBuilder().addComponents(durationMenu),
-        new ActionRowBuilder().addComponents(colorMenu)
-    ],
-    flags: 64
-});
-}
-if (interaction.customId === 'emoji_name_modal') {
+            components: [
+                new ActionRowBuilder().addComponents(durationMenu),
+                new ActionRowBuilder().addComponents(colorMenu)
+            ],
+            flags: 64
+        });
+    }
+
+    if (interaction.customId === 'emoji_name_modal') {
         const emojiName = interaction.fields.getTextInputValue('emoji_name').toLowerCase();
 
         pendingEmojiRequests.set(interaction.user.id, {
@@ -1151,6 +1312,102 @@ if (interaction.customId === 'emoji_name_modal') {
 
 Maintenant, envoie l’image de ton emoji dans ce salon.
 ⚠️ La Team validera la demande avant création.`,
+            flags: 64
+        });
+    }
+
+    if (interaction.customId === 'gage_modal') {
+        const gageText = interaction.fields.getTextInputValue('gage_text');
+
+        const insertResult = await pool.query(
+            `INSERT INTO shop_requests
+            (user_id, type, content, price)
+            VALUES ($1, $2, $3, $4)
+            RETURNING id`,
+            [interaction.user.id, 'gage', gageText, 200]
+        );
+
+        const requestId = insertResult.rows[0].id;
+
+        const buttons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`approve_shop_${requestId}`)
+                    .setLabel('Accepter')
+                    .setEmoji('✅')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId(`reject_shop_${requestId}`)
+                    .setLabel('Refuser')
+                    .setEmoji('❌')
+                    .setStyle(ButtonStyle.Danger)
+            );
+
+        const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+
+        if (logChannel) {
+            await logChannel.send({
+                content: `😈 **Nouvelle demande de gage**
+
+👤 Membre : ${interaction.user}
+💰 Prix : **200 Bichcoins**
+
+📌 Gage demandé :
+${gageText}`,
+                components: [buttons]
+            });
+        }
+
+        return interaction.reply({
+            content: '✅ Ta demande de gage a été envoyée à la Team pour validation.',
+            flags: 64
+        });
+    }
+
+    if (interaction.customId === 'phrase_modal') {
+        const phraseText = interaction.fields.getTextInputValue('phrase_text');
+
+        const insertResult = await pool.query(
+            `INSERT INTO shop_requests
+            (user_id, type, content, price)
+            VALUES ($1, $2, $3, $4)
+            RETURNING id`,
+            [interaction.user.id, 'phrase', phraseText, 300]
+        );
+
+        const requestId = insertResult.rows[0].id;
+
+        const buttons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`approve_shop_${requestId}`)
+                    .setLabel('Accepter')
+                    .setEmoji('✅')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId(`reject_shop_${requestId}`)
+                    .setLabel('Refuser')
+                    .setEmoji('❌')
+                    .setStyle(ButtonStyle.Danger)
+            );
+
+        const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+
+        if (logChannel) {
+            await logChannel.send({
+                content: `📢 **Nouvelle demande de phrase épinglée**
+
+👤 Membre : ${interaction.user}
+💰 Prix : **300 Bichcoins**
+
+📌 Phrase demandée :
+${phraseText}`,
+                components: [buttons]
+            });
+        }
+
+        return interaction.reply({
+            content: '✅ Ta demande de phrase épinglée a été envoyée à la Team pour validation.',
             flags: 64
         });
     }
