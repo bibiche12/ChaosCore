@@ -180,6 +180,22 @@ async function addPoints(userId, amount) {
 
     return result.rows[0].balance;
 }
+function getRoleColorHex(colorKey) {
+    const colors = {
+        red: '#FF0000',
+        orange: '#FF8000',
+        yellow: '#FFD700',
+        green: '#00CC66',
+        blue: '#0099FF',
+        purple: '#9933FF',
+        pink: '#FF69B4',
+        black: '#2F3136',
+        white: '#FFFFFF',
+        brown: '#8B4513'
+    };
+
+    return colors[colorKey] || '#9933FF';
+}
 
 async function getTicketUser(userId) {
     const result = await pool.query(
@@ -687,6 +703,63 @@ if (interaction.customId.startsWith('cancel_role_purchase_')) {
         content: '❌ Achat annulé. Aucun Bichcoin n’a été débité.',
         flags: 64
     });
+}
+if (interaction.customId.startsWith('confirm_role_purchase_')) {
+
+    const purchase = pendingRolePurchases.get(interaction.user.id);
+
+    if (!purchase) {
+        return interaction.reply({
+            content: '❌ Aucune création de rôle en cours.',
+            flags: 64
+        });
+    }
+
+    const userPoints = await getUserPoints(interaction.user.id);
+
+    if (userPoints.balance < purchase.price) {
+        return interaction.reply({
+            content: `❌ Solde insuffisant.
+
+💰 Ton solde : **${userPoints.balance} Bichcoins**
+🏷️ Prix du rôle : **${purchase.price} Bichcoins**`,
+            flags: 64
+        });
+    }
+
+const colorHex = getRoleColorHex(purchase.color);
+
+const role = await interaction.guild.roles.create({
+    name: purchase.roleName,
+    color: colorHex,
+    reason: `Achat boutique Oncle'Bich par ${interaction.user.tag}`
+});
+
+const member = await interaction.guild.members.fetch(interaction.user.id);
+
+await member.roles.add(role);
+
+await addPoints(interaction.user.id, -purchase.price);
+
+pendingRolePurchases.delete(interaction.user.id);
+
+await sendLog(`👑 **Achat rôle temporaire**
+
+👤 Membre : ${interaction.user}
+🏷️ Rôle : **${purchase.roleName}**
+🎨 Couleur : **${purchase.color}**
+⏳ Durée : **${purchase.duration} jours**
+💰 Dépense : **${purchase.price} Bichcoins**`);
+
+return interaction.reply({
+    content: `✅ **Achat validé !**
+
+👑 Ton rôle **${purchase.roleName}** a été créé et attribué.
+💰 **${purchase.price} Bichcoins** ont été débités.
+
+⏳ Durée : **${purchase.duration} jours**`,
+    flags: 64
+});
 }
         if (interaction.customId === 'shop_buy_emoji') {
             return interaction.reply({
