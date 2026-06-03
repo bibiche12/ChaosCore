@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<style>
+    body {
+        margin: 0;
+        overflow: hidden;
+        background: transparent;
+        font-family: Arial, sans-serif;
+    }
+
+    .ticker {
+        position: fixed;
+        bottom: 0;
+        width: 100vw;
+        height: 48px;
+        background: rgba(0, 0, 0, 0.75);
+        border-top: 2px solid #9b5cff;
+        color: white;
+        display: flex;
+        align-items: center;
+        overflow: hidden;
+        font-size: 24px;
+        font-weight: bold;
+    }
+
+    .ticker-content {
+        white-space: nowrap;
+        animation: scroll 35s linear infinite;
+        padding-left: 100%;
+    }
+
+    .gage {
+        color: #ff5c5c;
+    }
+
+    .phrase {
+        color: #9b5cff;
+    }
+
+    @keyframes scroll {
+        from { transform: translateX(0); }
+        to { transform: translateX(-100%); }
+    }
+</style>
+</head>
+<body>
+
+<div class="ticker">
+    <div class="ticker-content">
+        <span class="gage">😈 GAGE DU JOUR :</span> Aucun gage actif
+        &nbsp;&nbsp; • &nbsp;&nbsp;
+        <span class="phrase">📢 MESSAGE LIVE :</span> Aucun message actif
+    </div>
+</div>
+
+</body>
+</html>

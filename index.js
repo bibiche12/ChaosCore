@@ -19,6 +19,7 @@ const {
 const axios = require('axios');
 const tmi = require('tmi.js');
 const { Pool } = require('pg');
+const express = require('express');
 
 const client = new Client({
     intents: [
@@ -32,6 +33,9 @@ const client = new Client({
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL
 });
+
+const app = express();
+const PORT = process.env.PORT || 3000;
 
 // ==========================
 // CONFIG DISBOARD
@@ -2049,5 +2053,7 @@ Utilisez \`/resume\` pour voir le classement.`);
 // ==========================
 // CONNEXION
 // ==========================
-
+app.listen(PORT, () => {
+    console.log(`🌐 Overlay Web démarré sur le port ${PORT}`);
+});
 client.login(process.env.DISCORD_TOKEN);
