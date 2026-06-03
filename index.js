@@ -2053,7 +2053,40 @@ Utilisez \`/resume\` pour voir le classement.`);
 // ==========================
 // CONNEXION
 // ==========================
+app.get('/overlay', async (req, res) => {
+
+    const result = await pool.query(
+        `SELECT * FROM shop_requests
+         WHERE status = 'approved'`
+    );
+
+    const gages = [];
+    const phrases = [];
+
+    for (const request of result.rows) {
+
+        if (request.type === 'gage') {
+            gages.push(request.content);
+        }
+
+        if (request.type === 'phrase') {
+
+            try {
+                const data = JSON.parse(request.content);
+                phrases.push(data.text);
+            } catch {
+                phrases.push(request.content);
+            }
+        }
+    }
+
+    res.json({
+        gages,
+        phrases
+    });
+});
 app.listen(PORT, () => {
     console.log(`🌐 Overlay Web démarré sur le port ${PORT}`);
 });
+
 client.login(process.env.DISCORD_TOKEN);
