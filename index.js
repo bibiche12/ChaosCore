@@ -172,6 +172,10 @@ await pool.query(`
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 `);
+await pool.query(`
+    ALTER TABLE shop_requests
+    ADD COLUMN IF NOT EXISTS active_message_id TEXT;
+`);
     console.log('✅ Base PostgreSQL prête');
 }
 
@@ -484,7 +488,80 @@ async function getTwitchAccessToken() {
     twitchAccessToken = response.data.access_token;
     console.log('✅ Token Twitch récupéré');
 }
+async function processLivePhrases() {
 
+    const result = await pool.query(
+        `SELECT * FROM shop_requests
+         WHERE status = 'approved'
+         AND type = 'phrase'
+         AND active_message_id IS NOT NULL`
+    );
+
+    for (const request of result.rows) {
+
+        const phraseData = JSON.parse(request.content);
+
+        phraseData.lives--;
+
+        if (phraseData.lives <= 0) {
+
+            const channel = await client.channels
+                .fetch(LIVE_AUTO_CHANNEL_ID)
+                .catch(() => null);
+
+            if (channel) {
+                const message = await channel.messages
+                    .fetch(request.active_message_id)
+                    .catch(() => null);
+
+                if (message) {
+                    await message.delete().catch(() => null);
+                }
+            }
+
+            await pool.query(
+                `UPDATE shop_requests
+                 SET status = 'completed'
+                 WHERE id = $1`,
+                [request.id]
+            );
+
+            continue;
+        }
+
+        await pool.query(
+            `UPDATE shop_requests
+             SET content = $1
+             WHERE id = $2`,
+            [
+                JSON.stringify(phraseData),
+                request.id
+            ]
+        );
+
+        const channel = await client.channels
+            .fetch(LIVE_AUTO_CHANNEL_ID)
+            .catch(() => null);
+
+        if (channel) {
+
+            const message = await channel.messages
+                .fetch(request.active_message_id)
+                .catch(() => null);
+
+            if (message) {
+                await message.edit({
+                    content: `📢 **PHRASE LIVE ACTIVE**
+
+👤 <@${request.user_id}>
+📺 Lives restants : **${phraseData.lives}**
+
+${phraseData.text}`
+                });
+            }
+        }
+    }
+}
 async function checkTwitchLive() {
     try {
         if (!twitchAccessToken) await getTwitchAccessToken();
@@ -525,6 +602,7 @@ Le chaos commence maintenant 😈
 La bibiche a sonné l’alarme 🦌🔥`;
 
             await channel.send(liveMessage);
+            await processLivePhrases();
             console.log('🔴 Annonce live envoyée');
         }
 
@@ -1135,54 +1213,58 @@ if (interaction.customId.startsWith('approve_shop_')) {
          WHERE id = $1`,
         [requestId]
     );
-const liveChannel = await client.channels
-    .fetch(LIVE_AUTO_CHANNEL_ID)
-    .catch(() => null);
 
-if (liveChannel) {
+    const liveChannel = await client.channels.fetch(LIVE_AUTO_CHANNEL_ID).catch(() => null);
 
-    const activeButtons = new ActionRowBuilder()
-        .addComponents(
-            new ButtonBuilder()
-                .setCustomId(`finish_shop_${requestId}`)
-                .setLabel('Terminé')
-                .setEmoji('✅')
-                .setStyle(ButtonStyle.Success)
-        );
+    if (liveChannel) {
+        const activeButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`finish_shop_${requestId}`)
+                    .setLabel('Terminé')
+                    .setEmoji('✅')
+                    .setStyle(ButtonStyle.Success)
+            );
 
-    if (request.type === 'gage') {
-
-        await liveChannel.send({
-            content: `😈 **GAGE ACTIF**
+        if (request.type === 'gage') {
+            await liveChannel.send({
+                content: `😈 **GAGE ACTIF**
 
 👤 <@${request.user_id}>
 
 ${request.content}`,
-            components: [activeButtons]
-        });
-    }
+                components: [activeButtons]
+            });
+        }
 
-    if (request.type === 'phrase') {
+        if (request.type === 'phrase') {
+            const phraseData = JSON.parse(request.content);
 
-        await liveChannel.send({
-            content: `📢 **PHRASE LIVE ACTIVE**
+            const activeMessage = await liveChannel.send({
+                content: `📢 **PHRASE LIVE ACTIVE**
 
 👤 <@${request.user_id}>
+📺 Lives restants : **${phraseData.lives}**
 
-${request.content}`,
-            components: [activeButtons]
-        });
+${phraseData.text}`,
+                components: [activeButtons]
+            });
+
+            await pool.query(
+                `UPDATE shop_requests
+                 SET active_message_id = $1
+                 WHERE id = $2`,
+                [activeMessage.id, requestId]
+            );
+        }
     }
-}
+
     return interaction.reply({
         content: `✅ Demande acceptée !
 
 👤 Membre : <@${request.user_id}>
 📌 Type : **${request.type}**
-💰 **${request.price} Bichcoins** débités.
-
-📝 Contenu :
-${request.content}`,
+💰 **${request.price} Bichcoins** débités.`,
         flags: 64
     });
 }
