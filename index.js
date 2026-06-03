@@ -2085,8 +2085,97 @@ app.get('/overlay', async (req, res) => {
         phrases
     });
 });
+app.get('/overlay-view', (req, res) => {
+
+    res.send(`
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>ChaosCore Overlay</title>
+
+<style>
+
+body{
+    margin:0;
+    overflow:hidden;
+    background:transparent;
+    font-family:Arial,sans-serif;
+}
+
+.ticker{
+    position:fixed;
+    bottom:0;
+    width:100%;
+    height:50px;
+    background:rgba(0,0,0,0.75);
+    border-top:2px solid #9b5cff;
+    color:white;
+    overflow:hidden;
+    display:flex;
+    align-items:center;
+}
+
+.ticker-content{
+    white-space:nowrap;
+    display:inline-block;
+    padding-left:100%;
+    animation:scroll 40s linear infinite;
+    font-size:24px;
+    font-weight:bold;
+}
+
+@keyframes scroll{
+    from{transform:translateX(0);}
+    to{transform:translateX(-100%);}
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="ticker">
+    <div class="ticker-content" id="ticker">
+        Chargement...
+    </div>
+</div>
+
+<script>
+
+async function updateTicker(){
+
+    const response = await fetch('/overlay');
+    const data = await response.json();
+
+    let items = [];
+
+    data.gages.forEach(gage => {
+        items.push('😈 GAGE DU JOUR : ' + gage);
+    });
+
+    data.phrases.forEach(phrase => {
+        items.push('📢 MESSAGE LIVE : ' + phrase);
+    });
+
+    document.getElementById('ticker').innerText =
+        items.join('   •   ');
+}
+
+updateTicker();
+
+setInterval(updateTicker, 10000);
+
+</script>
+
+</body>
+</html>
+    `);
+
+});
 app.listen(PORT, () => {
     console.log(`🌐 Overlay Web démarré sur le port ${PORT}`);
 });
+
 
 client.login(process.env.DISCORD_TOKEN);
