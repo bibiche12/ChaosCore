@@ -392,15 +392,18 @@ const commands = [
     new SlashCommandBuilder()
         .setName('solde')
         .setDescription('Voir ton solde de Bichcoins'),
-new SlashCommandBuilder()
-    .setName('profil')
-    .setDescription('Voir ton profil ChaosCore'),
-new SlashCommandBuilder()
-    .setName('setupboutique')
-    .setDescription('Installer ou mettre à jour la boutique Oncle\'Bich'),
-new SlashCommandBuilder()
-    .setName('viderboutique')
-    .setDescription('Vider le salon boutique Oncle\'Bich'),
+
+    new SlashCommandBuilder()
+        .setName('profil')
+        .setDescription('Voir ton profil ChaosCore'),
+
+    new SlashCommandBuilder()
+        .setName('setupboutique')
+        .setDescription('Installer ou mettre à jour la boutique Oncle\'Bich'),
+
+    new SlashCommandBuilder()
+        .setName('viderboutique')
+        .setDescription('Vider le salon boutique Oncle\'Bich'),
 
     new SlashCommandBuilder()
         .setName('adpoint')
@@ -450,19 +453,20 @@ new SlashCommandBuilder()
         .addStringOption(option =>
             option.setName('raison').setDescription('Raison').setRequired(true)
         ),
-new SlashCommandBuilder()
-    .setName('retticket')
-    .setDescription('Retirer des Tickets du Chaos à un membre')
-    .addUserOption(option =>
-        option.setName('membre').setDescription('Membre à débiter').setRequired(true)
-    )
-    .addIntegerOption(option =>
-        option.setName('montant').setDescription('Nombre de tickets').setRequired(true).setMinValue(1)
-    )
-    .addStringOption(option =>
-        option.setName('raison').setDescription('Raison').setRequired(true)
-    ),
-    
+
+    new SlashCommandBuilder()
+        .setName('retticket')
+        .setDescription('Retirer des Tickets du Chaos à un membre')
+        .addUserOption(option =>
+            option.setName('membre').setDescription('Membre à débiter').setRequired(true)
+        )
+        .addIntegerOption(option =>
+            option.setName('montant').setDescription('Nombre de tickets').setRequired(true).setMinValue(1)
+        )
+        .addStringOption(option =>
+            option.setName('raison').setDescription('Raison').setRequired(true)
+        ),
+
     new SlashCommandBuilder()
         .setName('live')
         .setDescription('Démarrer le comptage Tickets du Chaos'),
@@ -473,7 +477,12 @@ new SlashCommandBuilder()
 
     new SlashCommandBuilder()
         .setName('resume')
-        .setDescription('Afficher le classement Tickets du Chaos')
+        .setDescription('Afficher le classement Tickets du Chaos'),
+
+    new SlashCommandBuilder()
+        .setName('cleanupshop')
+        .setDescription('Supprime toutes les demandes boutique terminées ou de test')
+
 ].map(command => command.toJSON());
 
 // ==========================
@@ -1157,7 +1166,24 @@ if (interaction.customId.startsWith('reject_shop_')) {
 }
 if (interaction.customId.startsWith('finish_shop_')) {
 
+    if (interaction.customId.startsWith('finish_shop_')) {
+
+    const requestId = interaction.customId.split('_')[2];
+
+    await pool.query(
+        `UPDATE shop_requests
+         SET status = 'completed'
+         WHERE id = $1`,
+        [requestId]
+    );
+
     await interaction.message.delete().catch(() => null);
+
+    return interaction.reply({
+        content: '✅ Élément terminé, retiré du live et archivé.',
+        flags: 64
+    });
+}
 
     return interaction.reply({
         content: '✅ Élément terminé et retiré du live.',
@@ -2048,6 +2074,21 @@ Utilisez \`/resume\` pour voir le classement.`);
 
         await interaction.reply(message);
     }
+    if (interaction.commandName === 'cleanupshop') {
+
+    const result = await pool.query(
+        `DELETE FROM shop_requests
+         WHERE status = 'completed'
+         OR content IN ('test', 'gfhtktu')`
+    );
+
+    return interaction.reply({
+        content: `🧹 Nettoyage terminé.
+
+${result.rowCount} demande(s) supprimée(s).`,
+        flags: 64
+    });
+}
 });
 
 // ==========================
