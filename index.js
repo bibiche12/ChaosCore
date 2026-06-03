@@ -141,6 +141,17 @@ await pool.query(`
         channel_id TEXT NOT NULL
     );
 `);
+await pool.query(`
+    CREATE TABLE IF NOT EXISTS temporary_roles (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        role_id TEXT NOT NULL,
+        guild_id TEXT NOT NULL,
+        role_name TEXT NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+`);
     console.log('✅ Base PostgreSQL prête');
 }
 
@@ -620,7 +631,45 @@ ${result.rows.length} membre(s) ont reçu **${MONTHLY_BONUS} ${MONEY_NAME}s**.`)
 // ==========================
 // BOT PRÊT
 // ==========================
+async function checkExpiredTemporaryRoles() {
+    try {
+        const result = await pool.query(
+            `SELECT * FROM temporary_roles
+             WHERE expires_at <= NOW()`
+        );
 
+        if (result.rows.length === 0) return;
+
+        for (const tempRole of result.rows) {
+            const guild = await client.guilds.fetch(tempRole.guild_id).catch(() => null);
+            if (!guild) continue;
+
+            const member = await guild.members.fetch(tempRole.user_id).catch(() => null);
+            const role = await guild.roles.fetch(tempRole.role_id).catch(() => null);
+
+            if (member && role) {
+                await member.roles.remove(role).catch(console.error);
+            }
+
+            if (role) {
+                await role.delete('Expiration rôle temporaire Oncle’Bich').catch(console.error);
+            }
+
+            await pool.query(
+                `DELETE FROM temporary_roles WHERE id = $1`,
+                [tempRole.id]
+            );
+
+            await sendLog(`⏳ **Rôle temporaire expiré**
+
+👤 Membre : <@${tempRole.user_id}>
+🏷️ Rôle : **${tempRole.role_name}**
+🗑️ Rôle retiré et supprimé automatiquement.`);
+        }
+    } catch (error) {
+        console.error('❌ Erreur vérification rôles temporaires :', error);
+    }
+}
 client.once(Events.ClientReady, async (readyClient) => {
     console.log(`✅ ${readyClient.user.tag} est connecté !`);
 
@@ -666,6 +715,10 @@ client.once(Events.ClientReady, async (readyClient) => {
     setInterval(checkMonthlyBonus, 6 * 60 * 60 * 1000);
 
     console.log('✅ Bonus mensuel activé');
+    await checkExpiredTemporaryRoles();
+setInterval(checkExpiredTemporaryRoles, 60 * 60 * 1000);
+
+console.log('✅ Vérification des rôles temporaires activée');
 });
 
 // ==========================
@@ -738,7 +791,21 @@ const role = await interaction.guild.roles.create({
 const member = await interaction.guild.members.fetch(interaction.user.id);
 
 await member.roles.add(role);
+const expiresAt = new Date();
+expiresAt.setDate(expiresAt.getDate() + purchase.duration);
 
+await pool.query(
+    `INSERT INTO temporary_roles
+    (user_id, role_id, guild_id, role_name, expires_at)
+    VALUES ($1, $2, $3, $4, $5)`,
+    [
+        interaction.user.id,
+        role.id,
+        interaction.guild.id,
+        purchase.roleName,
+        expiresAt
+    ]
+);
 await addPoints(interaction.user.id, -purchase.price);
 
 pendingRolePurchases.delete(interaction.user.id);
