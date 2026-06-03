@@ -70,10 +70,8 @@ let alreadyAnnouncedLive = false;
 
 const MONEY_NAME = 'Bichcoin';
 const TEAM_ROLE_NAME = '👑 Team';
-
 const LOG_CHANNEL_ID = '1510994452972310708';
 const LIVE_AUTO_CHANNEL_ID = '1503664842400206978';
-
 const ALLOWED_MONEY_CHANNELS = [
     '1503703021832507452',
     '1503703739943358554',
@@ -92,7 +90,6 @@ let messageCooldowns = new Map();
 
 const CHAOS_CHILD_ROLE_ID = '1508899875310538873';
 const CONTEST_LOG_CHANNEL_ID = '1508897752824811631';
-
 const TICKET_PRESENCE = 2;
 const TICKET_EVERY_10_MESSAGES = 2;
 const TWITCH_MESSAGE_COOLDOWN = 5000;
@@ -104,9 +101,9 @@ let currentLive = {
 };
 
 let twitchCooldowns = new Map();
-
 let pendingRolePurchases = new Map();
 let pendingEmojiRequests = new Map();
+let pendingPhraseRequests = new Map();
 // ==========================
 // DATABASE
 // ==========================
@@ -1221,33 +1218,29 @@ ${request.content}`,
 }
 if (interaction.customId === 'shop_buy_phrase') {
 
-    const userPoints = await getUserPoints(interaction.user.id);
+    const durationMenu = new StringSelectMenuBuilder()
+        .setCustomId('phrase_duration')
+        .setPlaceholder('Choisis la durée')
+        .addOptions(
+            {
+                label: '1 live',
+                description: '300 Bichcoins',
+                value: '1_300'
+            },
+            {
+                label: '2 lives',
+                description: '550 Bichcoins',
+                value: '2_550'
+            }
+        );
 
-    if (userPoints.balance < 300) {
-        return interaction.reply({
-            content: `❌ Solde insuffisant.
-
-💰 Ton solde : **${userPoints.balance} Bichcoins**
-📢 Prix minimum : **300 Bichcoins**`,
-            flags: 64
-        });
-    }
-
-    const modal = new ModalBuilder()
-        .setCustomId('phrase_modal')
-        .setTitle('Phrase épinglée');
-
-    const input = new TextInputBuilder()
-        .setCustomId('phrase_text')
-        .setLabel('Phrase à afficher')
-        .setStyle(TextInputStyle.Paragraph)
-        .setRequired(true);
-
-    modal.addComponents(
-        new ActionRowBuilder().addComponents(input)
-    );
-
-    return interaction.showModal(modal);
+    return interaction.reply({
+        content: '📢 Choisis combien de lives la phrase doit rester affichée.',
+        components: [
+            new ActionRowBuilder().addComponents(durationMenu)
+        ],
+        flags: 64
+    });
 }
 }
 if (interaction.isModalSubmit()) {
@@ -1363,57 +1356,100 @@ ${gageText}`,
             flags: 64
         });
     }
-
     if (interaction.customId === 'phrase_modal') {
-        const phraseText = interaction.fields.getTextInputValue('phrase_text');
+    const phraseText = interaction.fields.getTextInputValue('phrase_text');
 
-        const insertResult = await pool.query(
-            `INSERT INTO shop_requests
-            (user_id, type, content, price)
-            VALUES ($1, $2, $3, $4)
-            RETURNING id`,
-            [interaction.user.id, 'phrase', phraseText, 300]
-        );
+    const phraseData = pendingPhraseRequests.get(interaction.user.id);
 
-        const requestId = insertResult.rows[0].id;
-
-        const buttons = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`approve_shop_${requestId}`)
-                    .setLabel('Accepter')
-                    .setEmoji('✅')
-                    .setStyle(ButtonStyle.Success),
-                new ButtonBuilder()
-                    .setCustomId(`reject_shop_${requestId}`)
-                    .setLabel('Refuser')
-                    .setEmoji('❌')
-                    .setStyle(ButtonStyle.Danger)
-            );
-
-        const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
-
-        if (logChannel) {
-            await logChannel.send({
-                content: `📢 **Nouvelle demande de phrase épinglée**
-
-👤 Membre : ${interaction.user}
-💰 Prix : **300 Bichcoins**
-
-📌 Phrase demandée :
-${phraseText}`,
-                components: [buttons]
-            });
-        }
-
+    if (!phraseData) {
         return interaction.reply({
-            content: '✅ Ta demande de phrase épinglée a été envoyée à la Team pour validation.',
+            content: '❌ Durée introuvable.',
             flags: 64
         });
     }
+
+    const insertResult = await pool.query(
+        `INSERT INTO shop_requests
+        (user_id, type, content, price)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id`,
+        [
+            interaction.user.id,
+            'phrase',
+            JSON.stringify({
+                text: phraseText,
+                lives: phraseData.lives
+            }),
+            phraseData.price
+        ]
+    );
+
+    const requestId = insertResult.rows[0].id;
+
+    const buttons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId(`approve_shop_${requestId}`)
+                .setLabel('Accepter')
+                .setEmoji('✅')
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId(`reject_shop_${requestId}`)
+                .setLabel('Refuser')
+                .setEmoji('❌')
+                .setStyle(ButtonStyle.Danger)
+        );
+
+    const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+
+    if (logChannel) {
+        await logChannel.send({
+            content: `📢 **Nouvelle demande de phrase épinglée**
+
+👤 Membre : ${interaction.user}
+💰 Prix : **${phraseData.price} Bichcoins**
+📺 Durée : **${phraseData.lives} live(s)**
+
+📌 Phrase demandée :
+${phraseText}`,
+            components: [buttons]
+        });
+    }
+
+    pendingPhraseRequests.delete(interaction.user.id);
+
+    return interaction.reply({
+        content: '✅ Ta demande de phrase épinglée a été envoyée à la Team pour validation.',
+        flags: 64
+    });
+}
 }
 if (interaction.isStringSelectMenu()) {
+if (interaction.customId === 'phrase_duration') {
 
+    const [lives, price] = interaction.values[0].split('_');
+
+    pendingPhraseRequests.set(interaction.user.id, {
+        lives: Number(lives),
+        price: Number(price)
+    });
+
+    const modal = new ModalBuilder()
+        .setCustomId('phrase_modal')
+        .setTitle('Phrase épinglée');
+
+    const input = new TextInputBuilder()
+        .setCustomId('phrase_text')
+        .setLabel('Phrase à afficher')
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true);
+
+    modal.addComponents(
+        new ActionRowBuilder().addComponents(input)
+    );
+
+    return interaction.showModal(modal);
+}
     const purchase = pendingRolePurchases.get(interaction.user.id);
 
     if (!purchase) {
