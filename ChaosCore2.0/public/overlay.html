@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>ChaosCore Overlay</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: transparent;
+            font-family: Arial, sans-serif;
+        }
+
+        #ticker {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 46px;
+            background: rgba(0, 0, 0, 0.92);
+            border-top: 3px solid #9b5cff;
+            overflow: hidden;
+            display: none;
+            align-items: center;
+        }
+
+        #ticker.visible {
+            display: flex;
+        }
+
+        #track {
+            white-space: nowrap;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            padding-left: 100%;
+            animation: scrollText 35s linear infinite;
+        }
+
+        @keyframes scrollText {
+            from {
+                transform: translateX(0);
+            }
+            to {
+                transform: translateX(-100%);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="ticker">
+        <div id="track"></div>
+    </div>
+
+    <script>
+        const ticker = document.getElementById('ticker');
+        const track = document.getElementById('track');
+
+        function formatItem(item) {
+            const title = item.rewardName || 'Chaos';
+            const text = item.userInput || '';
+            return `${title} ${text}`;
+        }
+
+        async function refreshOverlay() {
+            try {
+                const response = await fetch('/overlay/latest');
+                const data = await response.json();
+
+                if (!data.active || !data.items || data.items.length === 0) {
+                    ticker.classList.remove('visible');
+                    track.innerText = '';
+                    return;
+                }
+
+                const message = data.items
+                    .map(formatItem)
+                    .join('   -   ');
+
+                track.innerText = message + '   -   ' + message;
+
+                ticker.classList.add('visible');
+            } catch (error) {
+                ticker.classList.remove('visible');
+                track.innerText = '';
+            }
+        }
+
+        refreshOverlay();
+        setInterval(refreshOverlay, 3000);
+    </script>
+</body>
+</html>
