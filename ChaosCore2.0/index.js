@@ -3,7 +3,7 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, Partials, REST, Routes } = require('discord.js');
 const express = require('express');
 const path = require('path');
-
+const security = require('./src/services/security');
 const config = require('./src/config');
 const db = require('./src/db/queries');
 const twitchService = require('./src/services/twitch');
@@ -26,6 +26,7 @@ const client = new Client({
         Partials.Reaction,
     ],
 });
+const recentJoins = [];
 
 async function sendOnboardingLog(message) {
     const channel = await client.channels.fetch(config.ONBOARDING_LOG_CHANNEL_ID).catch(() => null);
@@ -253,9 +254,50 @@ app.get('/overlay/latest', async (req, res) => {
 app.listen(PORT, () => {
     console.log(`🌐 Overlay Web démarré sur le port ${PORT}`);
 });
+async function triggerRaidAlert(members) {
+    if (security.isRaidMode()) return;
+
+    security.enableRaidMode();
+
+    const channel = await client.channels
+        .fetch(config.SECURITY_LOG_CHANNEL_ID)
+        .catch(() => null);
+
+    if (!channel) return;
+
+    await channel.send(
+        `🚨 **RAID POTENTIEL DÉTECTÉ**\n\n` +
+        `👥 Arrivées : **${members.length} membres**\n` +
+        `⏱️ Fenêtre : **2 minutes**\n\n` +
+        `🛡️ Mode Raid activé automatiquement.\n\n` +
+        members.map(m => `• ${m.user.tag}`).join('\n')
+    ).catch(() => null);
+
+    console.log('🚨 MODE RAID ACTIVÉ');
+}
+
 client.on('guildMemberAdd', async (member) => {
     try {
         await member.roles.add(config.ROLE_ETAPE_1_ID);
+                const now = Date.now();
+
+        recentJoins.push({
+            member,
+            timestamp: now,
+        });
+
+        while (
+            recentJoins.length &&
+            now - recentJoins[0].timestamp > config.ANTI_RAID_WINDOW_MS
+        ) {
+            recentJoins.shift();
+        }
+
+        if (recentJoins.length >= config.ANTI_RAID_THRESHOLD) {
+            await triggerRaidAlert(
+                recentJoins.map(entry => entry.member)
+            );
+        }
 
         await sendOnboardingLog(
             `👋 **Nouveau membre arrivé**\n\n` +
@@ -272,6 +314,10 @@ client.on('guildMemberAdd', async (member) => {
 client.on('messageReactionAdd', async (reaction, user) => {
     try {
         if (user.bot) return;
+            
+        if (security.isRaidMode()) {
+    return;
+}
 
         if (reaction.partial) {
             await reaction.fetch().catch(() => null);

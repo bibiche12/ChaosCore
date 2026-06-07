@@ -79,6 +79,19 @@ async function finishOnboarding(member, interaction, twitchName = null) {
 async function handleButton(interaction, discordClient, sendLog) {
 
     const { customId, user, guild } = interaction;
+    if (customId.startsWith('complete_shop_gage_')) {
+    await interaction.message.edit({
+        content:
+            interaction.message.content +
+            `\n\n✅ Gage effectué par ${user}`,
+        components: [],
+    }).catch(() => null);
+
+    return interaction.reply({
+        content: '✅ Gage marqué comme effectué.',
+        flags: 64,
+    });
+}
 
         // ==========================
     // ONBOARDING — ÂGE
@@ -111,6 +124,7 @@ async function handleButton(interaction, discordClient, sendLog) {
 
         await member.roles.remove(roleToRemove).catch(() => null);
         await member.roles.add(roleToAdd);
+        await interaction.message.delete().catch(() => null);
 
         return interaction.reply({
             content:
@@ -378,6 +392,7 @@ async function handleButton(interaction, discordClient, sendLog) {
         modal.addComponents(
             new ActionRowBuilder().addComponents(input)
         );
+        
 
         return interaction.showModal(modal);
     }
@@ -451,17 +466,26 @@ async function handleButton(interaction, discordClient, sendLog) {
         await db.updateShopRequestStatus(requestId, 'approved');
 
         if (request.type === 'gage') {
-            const liveChannel = await discordClient.channels.fetch(config.LIVE_AUTO_CHANNEL_ID).catch(() => null);
+    const liveChannel = await discordClient.channels.fetch(config.LIVE_AUTO_CHANNEL_ID).catch(() => null);
 
-            if (liveChannel) {
-                await liveChannel.send({
-                    content:
-                        `😈 **GAGE ACTIF**\n\n` +
-                        `👤 <@${request.user_id}>\n\n` +
-                        `${request.content}`,
-                });
-            }
-        }
+    if (liveChannel) {
+        const button = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`complete_shop_gage_${requestId}`)
+                .setLabel('Gage effectué')
+                .setEmoji('✅')
+                .setStyle(ButtonStyle.Success)
+        );
+
+        await liveChannel.send({
+            content:
+                `😈 **GAGE ACTIF**\n\n` +
+                `👤 <@${request.user_id}>\n\n` +
+                `${request.content}`,
+            components: [button],
+        });
+    }
+}
 
         if (request.type === 'phrase') {
             const phraseData = JSON.parse(request.content);
@@ -688,7 +712,7 @@ async function handleModal(interaction, discordClient, sendLog) {
             flags: 64,
         });
     }
-    
+
     if (customId === 'emoji_name_modal') {
         const emojiName = interaction.fields.getTextInputValue('emoji_name').toLowerCase().trim();
 

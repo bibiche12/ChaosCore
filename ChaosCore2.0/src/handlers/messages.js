@@ -9,6 +9,8 @@ const db = require('../db/queries');
 
 const messageCooldowns = new Map();
 let disboardReminderTimeout = null;
+const spamTracker = new Map();
+const spamWarnings = new Map();
 
 setInterval(() => {
     const limit = Date.now() - config.MESSAGE_COOLDOWN_MS;
@@ -123,6 +125,95 @@ async function handleMoneyGain(message) {
 
     console.log(`💰 +${config.POINTS_PER_MESSAGE} ${config.MONEY_NAME} pour ${message.author.tag}`);
 }
+function hasLink(content) {
+    return /(https?:\/\/|www\.|discord\.gg\/|discord\.com\/invite\/)/i.test(content || '');
+}
+
+function isTrustedMember(member) {
+    if (!member) return false;
+
+    const isTeam = member.roles.cache.some(role => role.name === config.TEAM_ROLE_NAME);
+    const isBibiche = member.roles.cache.has(config.ROLE_BIBICHE_ID);
+
+    return isTeam || isBibiche;
+}
+
+async function sendSecurityLog(discordClient, content) {
+    const channel = await discordClient.channels.fetch(config.SECURITY_LOG_CHANNEL_ID).catch(() => null);
+    if (channel) await channel.send(content).catch(() => null);
+}
+
+async function handleAntiSpam(message, discordClient) {
+    const member = message.member;
+    if (!member) return false;
+    if (isTrustedMember(member)) return false;
+
+    const now = Date.now();
+    const userId = message.author.id;
+
+    if (!spamTracker.has(userId)) {
+        spamTracker.set(userId, {
+            messages: [],
+            links: [],
+            files: [],
+        });
+    }
+
+    const data = spamTracker.get(userId);
+
+    data.messages.push(now);
+
+    if (hasLink(message.content)) {
+        data.links.push(now);
+    }
+
+    if (message.attachments.size > 0) {
+        data.files.push(now);
+    }
+
+    data.messages = data.messages.filter(t => now - t <= config.ANTI_SPAM_MESSAGE_WINDOW_MS);
+    data.links = data.links.filter(t => now - t <= config.ANTI_SPAM_MEDIA_WINDOW_MS);
+    data.files = data.files.filter(t => now - t <= config.ANTI_SPAM_MEDIA_WINDOW_MS);
+
+    spamTracker.set(userId, data);
+
+    const messageSpam = data.messages.length >= config.ANTI_SPAM_MESSAGE_LIMIT;
+    const linkSpam = data.links.length >= config.ANTI_SPAM_LINK_LIMIT;
+    const fileSpam = data.files.length >= config.ANTI_SPAM_FILE_LIMIT;
+
+    if (!messageSpam && !linkSpam && !fileSpam) return false;
+
+    const lastWarning = spamWarnings.get(userId) || 0;
+    spamWarnings.set(userId, now);
+
+    const reason = messageSpam
+        ? 'spam de messages'
+        : linkSpam
+            ? 'spam de liens'
+            : 'spam de fichiers';
+
+    await message.channel.send(
+        `⚠️ ${message.author}, comportement détecté comme **${reason}**.\n` +
+        `Par sécurité, tu es temporairement mute. La Team vérifiera si besoin.`
+    ).catch(() => null);
+
+    await sendSecurityLog(
+        discordClient,
+        `🔇 **Auto-mute sécurité**\n\n` +
+        `👤 Membre : ${message.author}\n` +
+        `📌 Raison : **${reason}**\n` +
+        `🦌 Statut : non Bibiche\n` +
+        `⏱️ Durée : **10 minutes**\n` +
+        `📍 Salon : ${message.channel}\n\n` +
+        `La gestion manuelle pourra être faite en MP.`
+    );
+
+    await member.timeout(config.ANTI_SPAM_TIMEOUT_MS, `ChaosCore anti-spam : ${reason}`).catch(error => {
+        console.error('❌ Impossible de timeout le membre:', error.message);
+    });
+
+    return true;
+}
 
 async function handleMessage(message, discordClient, sendLog, pendingEmojiRequests) {
     if (!message.guild) return;
@@ -134,10 +225,14 @@ async function handleMessage(message, discordClient, sendLog, pendingEmojiReques
 
     if (message.author.bot) return;
 
+        const blockedByAntiSpam = await handleAntiSpam(message, discordClient);
+    if (blockedByAntiSpam) return;
+
     const handledEmoji = await handleEmojiUpload(message, discordClient, pendingEmojiRequests);
     if (handledEmoji) return;
 
     await handleMoneyGain(message);
+    
 }
 
 module.exports = {

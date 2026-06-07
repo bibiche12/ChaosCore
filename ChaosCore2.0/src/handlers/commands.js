@@ -1,7 +1,7 @@
 const { SlashCommandBuilder } = require('discord.js');
 const db = require('../db/queries');
 const config = require('../config');
-
+const security = require('../services/security');
 const commandDefinitions = [
     new SlashCommandBuilder().setName('ping').setDescription('Vérifie que ChaosCore fonctionne'),
 
@@ -40,6 +40,9 @@ const commandDefinitions = [
     new SlashCommandBuilder().setName('live').setDescription('Démarrer le comptage live Twitch'),
 new SlashCommandBuilder().setName('scan').setDescription('Scanner Twitch maintenant pour détecter un live'),
     new SlashCommandBuilder().setName('stop').setDescription('Arrêter le comptage live Twitch'),
+new SlashCommandBuilder()
+    .setName('raidoff')
+    .setDescription('Désactiver le mode raid'),
 
     new SlashCommandBuilder()
         .setName('twitch')
@@ -90,6 +93,22 @@ async function handleCommand(interaction, { twitchService, setupShop, discordCli
     if (interaction.commandName === 'ping') {
         return interaction.reply('🏓 ChaosCore est vivant !');
     }
+    if (interaction.commandName === 'raidoff') {
+    if (!requireTeam(interaction)) return;
+
+    security.disableRaidMode();
+
+   const securityChannel = await discordClient.channels
+    .fetch(config.SECURITY_LOG_CHANNEL_ID)
+    .catch(() => null);
+
+if (securityChannel) {
+    await securityChannel.send(
+        `🛡️ **Mode Raid désactivé**\n\n` +
+        `👤 Par : ${interaction.user}`
+    );
+}
+}
 
     if (interaction.commandName === 'solde') {
         await interaction.deferReply({ flags: 64 });
