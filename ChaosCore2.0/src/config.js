@@ -24,6 +24,8 @@ module.exports = {
     LOG_CHANNEL_ID: '1510994452972310708',
     LIVE_AUTO_CHANNEL_ID: '1503664842400206978',
     CONTEST_LOG_CHANNEL_ID: '1508897752824811631',
+    WELCOME_CHANNEL_ID: '1503695133261041684',
+    GOODBYE_CHANNEL_ID: '1513129181989437460',
 
     // --- Onboarding / Sécurité ---
     ONBOARDING_RECAP_CHANNEL_ID: '1513128609529991169',
@@ -104,5 +106,6 @@ module.exports = {
         black: 'Noir',
         white: 'Blanc',
         brown: 'Marron',
+
     },
 };

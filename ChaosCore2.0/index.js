@@ -279,7 +279,8 @@ async function triggerRaidAlert(members) {
 client.on('guildMemberAdd', async (member) => {
     try {
         await member.roles.add(config.ROLE_ETAPE_1_ID);
-                const now = Date.now();
+
+        const now = Date.now();
 
         recentJoins.push({
             member,
@@ -314,10 +315,10 @@ client.on('guildMemberAdd', async (member) => {
 client.on('messageReactionAdd', async (reaction, user) => {
     try {
         if (user.bot) return;
-            
+
         if (security.isRaidMode()) {
-    return;
-}
+            return;
+        }
 
         if (reaction.partial) {
             await reaction.fetch().catch(() => null);
@@ -338,6 +339,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
         await member.roles.remove(config.ROLE_ETAPE_1_ID).catch(() => null);
         await member.roles.add(config.ROLE_ETAPE_2_ID);
+
         const rolesChannel = await client.channels.fetch(config.SALON_ROLES_ID).catch(() => null);
 
         if (rolesChannel) {
@@ -371,6 +373,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
                 components: [ageButtons],
             }).catch(() => null);
         }
+
         await sendOnboardingLog(
             `✅ **Règlement accepté**\n\n` +
             `👤 Membre : ${member}\n` +
@@ -381,6 +384,23 @@ client.on('messageReactionAdd', async (reaction, user) => {
         console.log(`✅ ${member.user.tag} a accepté le règlement → Étape 2`);
     } catch (error) {
         console.error('❌ Erreur messageReactionAdd onboarding:', error.message);
+    }
+});
+
+client.on('guildMemberRemove', async (member) => {
+    try {
+        const goodbyeChannel = await client.channels
+            .fetch(config.GOODBYE_CHANNEL_ID)
+            .catch(() => null);
+
+        if (!goodbyeChannel) return;
+
+        await goodbyeChannel.send(
+            `👋 ${member.user.tag} a quitté Black&Co'`
+        ).catch(() => null);
+
+    } catch (error) {
+        console.error('❌ Erreur départ membre:', error);
     }
 });
 

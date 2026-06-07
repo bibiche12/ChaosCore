@@ -50,6 +50,27 @@ function buildOnboardingTwitchButtons() {
 async function finishOnboarding(member, interaction, twitchName = null) {
     await member.roles.remove(config.ROLE_ETAPE_2_ID).catch(() => null);
     await member.roles.add(config.ROLE_MEMBRE_ID);
+    const welcomeChannel = await interaction.client.channels
+    .fetch(config.WELCOME_CHANNEL_ID)
+    .catch(() => null);
+
+if (welcomeChannel) {
+    await welcomeChannel.send(
+        `${member}
+
+👋 Bienvenue chez Black&Co' !
+
+Ravi de t’accueillir ici 🔥
+
+👉 N’hésite pas à rejoindre le club des bibiches si ce n’est pas déjà fait 😏
+
+👉 Prends un moment pour découvrir les salons et t’installer tranquillement
+
+🎮 Ici c’est chill, gaming et bonne ambiance avant tout !
+
+Amuse-toi bien parmi nous 🚀`
+    ).catch(() => null);
+}
 
     const recapChannel = await interaction.client.channels
         .fetch(config.ONBOARDING_RECAP_CHANNEL_ID)
