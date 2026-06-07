@@ -32,17 +32,53 @@ let currentLive = {
     users: {},
 };
 
+let liveStats = {
+    vies: 0,
+    morts: 0,
+    fails: 0,
+    peurs: 0,
+    karma: 0,
+};
+
 const twitchCooldowns = new Map();
 
 function getLiveState() {
     return {
         liveContestActive,
         currentLive,
+        liveStats,
     };
+}
+
+function getLiveStats() {
+    return liveStats;
+}
+
+function generateLiveStatsSummary(participants = 0) {
+    return (
+        `📊 **Résumé du live**\n\n` +
+        `❤️ Vies : **${liveStats.vies}**\n` +
+        `💀 Morts : **${liveStats.morts}**\n` +
+        `🤦 Fails : **${liveStats.fails}**\n` +
+        `😱 Peurs / Cris : **${liveStats.peurs}**\n` +
+        `👻 Karma : **${liveStats.karma}**\n\n` +
+        `👥 Participants actifs : **${participants}**\n\n` +
+        `Merci les Bibiches 🖤`
+    );
 }
 
 function setLiveActive(value) {
     liveContestActive = value;
+}
+
+function resetLiveStats() {
+    liveStats = {
+        vies: 0,
+        morts: 0,
+        fails: 0,
+        peurs: 0,
+        karma: 0,
+    };
 }
 
 function resetCurrentLive() {
@@ -50,6 +86,8 @@ function resetCurrentLive() {
         startedAt: new Date().toISOString(),
         users: {},
     };
+
+    resetLiveStats();
     twitchCooldowns.clear();
 }
 
@@ -251,6 +289,44 @@ function createTwitchChat(discordClient, sendContestLog) {
             const twitchName = tags.username?.toLowerCase();
             if (!twitchName) return;
 
+            const cmd = message.toLowerCase().trim();
+
+            if (cmd === '!vie') {
+                liveStats.vies += 1;
+                console.log(`❤️ !vie par ${twitchName} → ${liveStats.vies}`);
+                return;
+            }
+
+            if (cmd === '!mort') {
+                liveStats.morts += 1;
+                console.log(`💀 !mort par ${twitchName} → ${liveStats.morts}`);
+                return;
+            }
+
+            if (cmd === '!fail') {
+                liveStats.fails += 1;
+                console.log(`🤦 !fail par ${twitchName} → ${liveStats.fails}`);
+                return;
+            }
+
+            if (cmd === '!peur') {
+                liveStats.peurs += 1;
+                console.log(`😱 !peur par ${twitchName} → ${liveStats.peurs}`);
+                return;
+            }
+
+            if (cmd === '!karma') {
+                liveStats.karma += 1;
+                console.log(`👻 !karma par ${twitchName} → ${liveStats.karma}`);
+                return;
+            }
+
+            if (cmd === '!stat' || cmd === '!stats') {
+                const participants = Object.keys(currentLive.users || {}).length;
+                await twitchChat.say(channel, generateLiveStatsSummary(participants).replace(/\*\*/g, ''));
+                return;
+            }
+
             const now = Date.now();
             const last = twitchCooldowns.get(twitchName) || 0;
 
@@ -392,7 +468,10 @@ module.exports = {
     createTwitchChat,
     checkTwitchLive,
     getLiveState,
+    getLiveStats,
+    generateLiveStatsSummary,
     setLiveActive,
+    resetLiveStats,
     resetCurrentLive,
     stopCurrentLive,
 };

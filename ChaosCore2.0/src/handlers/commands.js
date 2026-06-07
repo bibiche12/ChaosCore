@@ -239,11 +239,12 @@ async function handleCommand(interaction, { twitchService, setupShop, discordCli
         ).catch(() => null);
     }
 
-    if (interaction.commandName === 'stop') {
+        if (interaction.commandName === 'stop') {
         if (!requireTeam(interaction)) return;
 
         const liveState = twitchService.getLiveState();
         const participants = Object.keys(liveState.currentLive.users || {}).length;
+        const summary = twitchService.generateLiveStatsSummary(participants);
 
         twitchService.stopCurrentLive();
 
@@ -251,8 +252,7 @@ async function handleCommand(interaction, { twitchService, setupShop, discordCli
 
         return sendContestLog(
             `⚫ **Live concours arrêté**\n\n` +
-            `Participants détectés : **${participants}**\n` +
-            `Utilisez \`/resume\` pour voir le classement.`
+            summary
         ).catch(() => null);
     }
 
