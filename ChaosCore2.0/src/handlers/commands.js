@@ -1,8 +1,17 @@
-const { SlashCommandBuilder } = require('discord.js');
+const {
+    SlashCommandBuilder,
+    EmbedBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+} = require('discord.js');
 const db = require('../db/queries');
 const config = require('../config');
 const security = require('../services/security');
 const commandDefinitions = [
+    new SlashCommandBuilder()
+    .setName('setuproles')
+    .setDescription('Créer les messages de rôles'),
     new SlashCommandBuilder().setName('ping').setDescription('Vérifie que ChaosCore fonctionne'),
 
     new SlashCommandBuilder().setName('solde').setDescription('Voir ton solde de Bichcoins'),
@@ -92,6 +101,140 @@ function requireTeam(interaction) {
 async function handleCommand(interaction, { twitchService, setupShop, discordClient, sendLog, sendContestLog, processLivePhrases }) {
     if (interaction.commandName === 'ping') {
         return interaction.reply('🏓 ChaosCore est vivant !');
+    }
+        if (interaction.commandName === 'setuproles') {
+        if (!requireTeam(interaction)) return;
+
+        await interaction.deferReply({ flags: 64 });
+
+        const roleChannel = await discordClient.channels
+            .fetch(config.SALON_ROLES_ID)
+            .catch(() => null);
+
+        if (!roleChannel) {
+            return interaction.editReply('❌ Salon rôles introuvable.');
+        }
+
+        const pingEmbed = new EmbedBuilder()
+            .setColor(0x2f3136)
+            .setTitle('🔔 PINGS')
+            .setDescription(
+                `Choisis les notifications que tu souhaites recevoir.\n\n` +
+                `📹 Ping - Live\n` +
+                `🎮 Ping - Game\n` +
+                `📰 Ping - Programme`
+            );
+
+        const pingButtons = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('autorole_ping_live')
+                .setLabel('Ping - Live')
+                .setEmoji('📹')
+                .setStyle(ButtonStyle.Secondary),
+
+            new ButtonBuilder()
+                .setCustomId('autorole_ping_game')
+                .setLabel('Ping - Game')
+                .setEmoji('🎮')
+                .setStyle(ButtonStyle.Secondary),
+
+            new ButtonBuilder()
+                .setCustomId('autorole_ping_programme')
+                .setLabel('Ping - Programme')
+                .setEmoji('📰')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+        const gameEmbed = new EmbedBuilder()
+            .setColor(0x2f3136)
+            .setTitle('🎮 JEUX')
+            .setDescription(
+                `Choisis les catégories de jeux qui t’intéressent.\n\n` +
+                `1️⃣ Jeu - Horreur\n` +
+                `2️⃣ Jeu - RPG\n` +
+                `3️⃣ Jeu - Tir\n` +
+                `4️⃣ Jeu - Sport`
+            );
+
+        const gameButtons = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('autorole_game_horreur')
+                .setLabel('Horreur')
+                .setEmoji('1️⃣')
+                .setStyle(ButtonStyle.Secondary),
+
+            new ButtonBuilder()
+                .setCustomId('autorole_game_rpg')
+                .setLabel('RPG')
+                .setEmoji('2️⃣')
+                .setStyle(ButtonStyle.Secondary),
+
+            new ButtonBuilder()
+                .setCustomId('autorole_game_tir')
+                .setLabel('Tir')
+                .setEmoji('3️⃣')
+                .setStyle(ButtonStyle.Secondary),
+
+            new ButtonBuilder()
+                .setCustomId('autorole_game_sport')
+                .setLabel('Sport')
+                .setEmoji('4️⃣')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+        const platformEmbed = new EmbedBuilder()
+            .setColor(0x2f3136)
+            .setTitle('🕹️ PLATEFORMES')
+            .setDescription(
+                `Choisis tes plateformes.\n\n` +
+                `🟩 Xbox\n` +
+                `🟦 PS5\n` +
+                `🟨 PC\n` +
+                `🟥 Switch`
+            );
+
+        const platformButtons = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('autorole_platform_xbox')
+                .setLabel('Xbox')
+                .setEmoji('🟩')
+                .setStyle(ButtonStyle.Secondary),
+
+            new ButtonBuilder()
+                .setCustomId('autorole_platform_ps5')
+                .setLabel('PS5')
+                .setEmoji('🟦')
+                .setStyle(ButtonStyle.Secondary),
+
+            new ButtonBuilder()
+                .setCustomId('autorole_platform_pc')
+                .setLabel('PC')
+                .setEmoji('🟨')
+                .setStyle(ButtonStyle.Secondary),
+
+            new ButtonBuilder()
+                .setCustomId('autorole_platform_switch')
+                .setLabel('Switch')
+                .setEmoji('🟥')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+        await roleChannel.send({
+            embeds: [pingEmbed],
+            components: [pingButtons],
+        });
+
+        await roleChannel.send({
+            embeds: [gameEmbed],
+            components: [gameButtons],
+        });
+
+        await roleChannel.send({
+            embeds: [platformEmbed],
+            components: [platformButtons],
+        });
+
+        return interaction.editReply('✅ Messages de rôles créés avec ChaosCore.');
     }
     if (interaction.commandName === 'raidoff') {
     if (!requireTeam(interaction)) return;
