@@ -31,9 +31,198 @@ function buildApproveRejectButtons(requestId) {
             .setStyle(ButtonStyle.Danger)
     );
 }
+function buildOnboardingTwitchButtons() {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('onboarding_twitch_link')
+            .setLabel('Lier mon Twitch')
+            .setEmoji('🔗')
+            .setStyle(ButtonStyle.Primary),
+
+        new ButtonBuilder()
+            .setCustomId('onboarding_twitch_skip')
+            .setLabel('Skip')
+            .setEmoji('⏭️')
+            .setStyle(ButtonStyle.Secondary)
+    );
+}
+
+async function finishOnboarding(member, interaction, twitchName = null) {
+    await member.roles.remove(config.ROLE_ETAPE_2_ID).catch(() => null);
+    await member.roles.add(config.ROLE_MEMBRE_ID);
+
+    const recapChannel = await interaction.client.channels
+        .fetch(config.ONBOARDING_RECAP_CHANNEL_ID)
+        .catch(() => null);
+
+    if (recapChannel) {
+        const trustButtons = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`onboarding_trust_${member.id}`)
+                .setLabel('Valider Bibiche')
+                .setEmoji('✅')
+                .setStyle(ButtonStyle.Success)
+        );
+
+        await recapChannel.send({
+            content:
+                `🦌 **Nouveau membre onboarding terminé**\n\n` +
+                `👤 Membre : ${member}\n` +
+                `📺 Twitch : **${twitchName || 'Non lié / Skip'}**\n` +
+                `🧩 Statut : **Membre ajouté**\n\n` +
+                `Tu peux valider la fiabilité plus tard avec le bouton ci-dessous.`,
+            components: [trustButtons],
+        }).catch(() => null);
+    }
+}
 
 async function handleButton(interaction, discordClient, sendLog) {
+
     const { customId, user, guild } = interaction;
+
+        // ==========================
+    // ONBOARDING — ÂGE
+    // ==========================
+
+    if (customId === 'onboarding_age_minor' || customId === 'onboarding_age_adult') {
+        const member = await guild.members.fetch(user.id).catch(() => null);
+
+        if (!member) {
+            return interaction.reply({
+                content: '❌ Membre introuvable.',
+                flags: 64,
+            });
+        }
+
+        if (!member.roles.cache.has(config.ROLE_ETAPE_2_ID)) {
+            return interaction.reply({
+                content: '❌ Tu n’es pas dans l’étape de validation.',
+                flags: 64,
+            });
+        }
+
+        const roleToAdd = customId === 'onboarding_age_minor'
+            ? config.ROLE_MINEUR_ID
+            : config.ROLE_MAJEUR_ID;
+
+        const roleToRemove = customId === 'onboarding_age_minor'
+            ? config.ROLE_MAJEUR_ID
+            : config.ROLE_MINEUR_ID;
+
+        await member.roles.remove(roleToRemove).catch(() => null);
+        await member.roles.add(roleToAdd);
+
+        return interaction.reply({
+            content:
+                `✅ Âge enregistré.\n\n` +
+                `Dernière étape : lie ton compte Twitch ou clique sur Skip.`,
+            components: [buildOnboardingTwitchButtons()],
+            flags: 64,
+        });
+    }
+
+    // ==========================
+    // ONBOARDING — LIER TWITCH
+    // ==========================
+
+    if (customId === 'onboarding_twitch_link') {
+        const modal = new ModalBuilder()
+            .setCustomId('onboarding_twitch_modal')
+            .setTitle('Lier ton compte Twitch');
+
+        const twitchInput = new TextInputBuilder()
+            .setCustomId('twitch_pseudo')
+            .setLabel('Ton pseudo Twitch')
+            .setPlaceholder('Exemple : BlackAlpha39')
+            .setStyle(TextInputStyle.Short)
+            .setMinLength(2)
+            .setMaxLength(32)
+            .setRequired(true);
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(twitchInput)
+        );
+
+        return interaction.showModal(modal);
+    }
+
+    // ==========================
+    // ONBOARDING — SKIP TWITCH
+    // ==========================
+
+    if (customId === 'onboarding_twitch_skip') {
+        const member = await guild.members.fetch(user.id).catch(() => null);
+
+        if (!member) {
+            return interaction.reply({
+                content: '❌ Membre introuvable.',
+                flags: 64,
+            });
+        }
+
+        if (!member.roles.cache.has(config.ROLE_ETAPE_2_ID)) {
+            return interaction.reply({
+                content: '❌ Tu n’es pas dans l’étape de validation.',
+                flags: 64,
+            });
+        }
+
+        if (
+            !member.roles.cache.has(config.ROLE_MINEUR_ID) &&
+            !member.roles.cache.has(config.ROLE_MAJEUR_ID)
+        ) {
+            return interaction.reply({
+                content: '❌ Tu dois d’abord choisir Mineur ou Majeur.',
+                flags: 64,
+            });
+        }
+
+        await finishOnboarding(member, interaction, null);
+
+        return interaction.reply({
+            content: '✅ Validation terminée ! Tu as maintenant accès au serveur.',
+            flags: 64,
+        });
+    }
+
+    // ==========================
+    // ONBOARDING — VALIDATION BIBICHE
+    // ==========================
+
+    if (customId.startsWith('onboarding_trust_')) {
+        const targetId = customId.replace('onboarding_trust_', '');
+        const member = await guild.members.fetch(targetId).catch(() => null);
+
+        if (!member) {
+            return interaction.reply({
+                content: '❌ Membre introuvable.',
+                flags: 64,
+            });
+        }
+
+        const isTeam = interaction.member.roles.cache.some(role => role.name === config.TEAM_ROLE_NAME);
+
+        if (!isTeam) {
+            return interaction.reply({
+                content: '❌ Seule la Team peut valider un membre Bibiche.',
+                flags: 64,
+            });
+        }
+
+        await member.roles.add(config.ROLE_BIBICHE_ID);
+
+        await interaction.message.edit({
+            content:
+                interaction.message.content +
+                `\n\n✅ Fiabilité validée par ${user}\n🦌 Rôle Bibiche ajouté.`,
+            components: [],
+        }).catch(() => null);
+
+        return interaction.reply({
+            content: `✅ ${member} a été validé en Bibiche.`,
+            flags: 64,
+        });
+    }
 
     // ==========================
     // VALIDATION GAGE OVERLAY
@@ -451,6 +640,55 @@ async function handleButton(interaction, discordClient, sendLog) {
 async function handleModal(interaction, discordClient, sendLog) {
     const { customId, user } = interaction;
 
+        // ==========================
+    // ONBOARDING — MODAL TWITCH
+    // ==========================
+
+    if (customId === 'onboarding_twitch_modal') {
+        const twitchName = interaction.fields
+            .getTextInputValue('twitch_pseudo')
+            .toLowerCase()
+            .replace('@', '')
+            .trim();
+
+        const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+
+        if (!member) {
+            return interaction.reply({
+                content: '❌ Membre introuvable.',
+                flags: 64,
+            });
+        }
+
+        if (!member.roles.cache.has(config.ROLE_ETAPE_2_ID)) {
+            return interaction.reply({
+                content: '❌ Tu n’es pas dans l’étape de validation.',
+                flags: 64,
+            });
+        }
+
+        if (
+            !member.roles.cache.has(config.ROLE_MINEUR_ID) &&
+            !member.roles.cache.has(config.ROLE_MAJEUR_ID)
+        ) {
+            return interaction.reply({
+                content: '❌ Tu dois d’abord choisir Mineur ou Majeur.',
+                flags: 64,
+            });
+        }
+
+        await db.setTwitchLink(twitchName, user.id);
+
+        await finishOnboarding(member, interaction, twitchName);
+
+        return interaction.reply({
+            content:
+                `✅ Ton Twitch **${twitchName}** est lié.\n\n` +
+                `Bienvenue officiellement sur le serveur 🖤`,
+            flags: 64,
+        });
+    }
+    
     if (customId === 'emoji_name_modal') {
         const emojiName = interaction.fields.getTextInputValue('emoji_name').toLowerCase().trim();
 

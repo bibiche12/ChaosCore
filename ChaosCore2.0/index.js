@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, REST, Routes } = require('discord.js');
 const express = require('express');
 const path = require('path');
 
@@ -18,6 +18,12 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessageReactions,
+    ],
+    partials: [
+        Partials.Message,
+        Partials.Channel,
+        Partials.Reaction,
     ],
 });
 
@@ -241,6 +247,90 @@ app.get('/overlay/latest', async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`🌐 Overlay Web démarré sur le port ${PORT}`);
+});
+client.on('guildMemberAdd', async (member) => {
+    try {
+        await member.roles.add(config.ROLE_ETAPE_1_ID);
+
+        await sendLog(
+            `👋 **Nouveau membre arrivé**\n\n` +
+            `👤 Membre : ${member}\n` +
+            `🧩 Rôle ajouté : <@&${config.ROLE_ETAPE_1_ID}>`
+        ).catch(() => null);
+
+        console.log(`👋 Nouveau membre : ${member.user.tag} → Étape 1`);
+    } catch (error) {
+        console.error('❌ Erreur guildMemberAdd onboarding:', error.message);
+    }
+});
+
+client.on('messageReactionAdd', async (reaction, user) => {
+    try {
+        if (user.bot) return;
+
+        if (reaction.partial) {
+            await reaction.fetch().catch(() => null);
+        }
+
+        if (!reaction.message || reaction.message.id !== config.REGLEMENT_MESSAGE_ID) return;
+
+        const emojiName = reaction.emoji.name;
+        if (emojiName !== config.REGLEMENT_EMOJI_NAME) return;
+
+        const guild = reaction.message.guild;
+        if (!guild) return;
+
+        const member = await guild.members.fetch(user.id).catch(() => null);
+        if (!member) return;
+
+        if (!member.roles.cache.has(config.ROLE_ETAPE_1_ID)) return;
+
+        await member.roles.remove(config.ROLE_ETAPE_1_ID).catch(() => null);
+        await member.roles.add(config.ROLE_ETAPE_2_ID);
+        const rolesChannel = await client.channels.fetch(config.SALON_ROLES_ID).catch(() => null);
+
+        if (rolesChannel) {
+            const {
+                ActionRowBuilder,
+                ButtonBuilder,
+                ButtonStyle,
+            } = require('discord.js');
+
+            const ageButtons = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('onboarding_age_minor')
+                    .setLabel('Mineur')
+                    .setEmoji('🔞')
+                    .setStyle(ButtonStyle.Secondary),
+
+                new ButtonBuilder()
+                    .setCustomId('onboarding_age_adult')
+                    .setLabel('Majeur')
+                    .setEmoji('✅')
+                    .setStyle(ButtonStyle.Success)
+            );
+
+            await rolesChannel.send({
+                content:
+                    `🦌 Bienvenue ${member} !\n\n` +
+                    `Pour continuer, choisis ton statut :\n\n` +
+                    `🔞 **Mineur**\n` +
+                    `✅ **Majeur**\n\n` +
+                    `Cette étape est obligatoire pour débloquer le serveur.`,
+                components: [ageButtons],
+            }).catch(() => null);
+        }
+        await sendLog(
+            `✅ **Règlement accepté**\n\n` +
+            `👤 Membre : ${member}\n` +
+            `➖ Retiré : <@&${config.ROLE_ETAPE_1_ID}>\n` +
+            `➕ Ajouté : <@&${config.ROLE_ETAPE_2_ID}>`
+        ).catch(() => null);
+
+        console.log(`✅ ${member.user.tag} a accepté le règlement → Étape 2`);
+    } catch (error) {
+        console.error('❌ Erreur messageReactionAdd onboarding:', error.message);
+    }
 });
 
 client.login(process.env.DISCORD_TOKEN);
