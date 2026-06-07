@@ -27,6 +27,11 @@ const client = new Client({
     ],
 });
 
+async function sendOnboardingLog(message) {
+    const channel = await client.channels.fetch(config.ONBOARDING_LOG_CHANNEL_ID).catch(() => null);
+    if (channel) await channel.send(message).catch(console.error);
+}
+
 async function sendLog(message) {
     const channel = await client.channels.fetch(config.LOG_CHANNEL_ID).catch(() => null);
     if (channel) await channel.send(message).catch(console.error);
@@ -252,7 +257,7 @@ client.on('guildMemberAdd', async (member) => {
     try {
         await member.roles.add(config.ROLE_ETAPE_1_ID);
 
-        await sendLog(
+        await sendOnboardingLog(
             `👋 **Nouveau membre arrivé**\n\n` +
             `👤 Membre : ${member}\n` +
             `🧩 Rôle ajouté : <@&${config.ROLE_ETAPE_1_ID}>`
@@ -320,7 +325,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
                 components: [ageButtons],
             }).catch(() => null);
         }
-        await sendLog(
+        await sendOnboardingLog(
             `✅ **Règlement accepté**\n\n` +
             `👤 Membre : ${member}\n` +
             `➖ Retiré : <@&${config.ROLE_ETAPE_1_ID}>\n` +
