@@ -38,7 +38,7 @@ const commandDefinitions = [
     new SlashCommandBuilder().setName('resume').setDescription('Afficher le classement Tickets du Chaos'),
 
     new SlashCommandBuilder().setName('live').setDescription('Démarrer le comptage live Twitch'),
-new SlashCommandBuilder().setName('live').setDescription('Démarrer le comptage live Twitch'),
+new SlashCommandBuilder().setName('scan').setDescription('Scanner Twitch maintenant pour détecter un live'),
     new SlashCommandBuilder().setName('stop').setDescription('Arrêter le comptage live Twitch'),
 
     new SlashCommandBuilder()
@@ -293,7 +293,7 @@ async function handleCommand(interaction, { twitchService, setupShop, discordCli
             summary
         ).catch(() => null);
     }
-    
+
     if (interaction.commandName === 'twitch') {
         if (!requireTeam(interaction)) return;
         await interaction.deferReply({ flags: 64 });
