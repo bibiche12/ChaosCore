@@ -258,7 +258,10 @@ function connectEventSub(sendContestLog) {
                 }
             }
         } catch (error) {
-            console.error('❌ Erreur EventSub message:', error);
+            console.error(
+    '❌ Erreur EventSub message:',
+    JSON.stringify(error.response?.data || error.message)
+);
         }
     });
 
