@@ -98,11 +98,58 @@ client.once('ready', async () => {
         console.error('❌ Erreur connexion Twitch chat:', error.message);
     });
 
+    function isInAutoScanWindow() {
+        const formatter = new Intl.DateTimeFormat('fr-FR', {
+            timeZone: 'Europe/Paris',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+        });
+
+        const now = formatter.format(new Date());
+
+        return now >= config.TWITCH_AUTO_SCAN_START && now <= config.TWITCH_AUTO_SCAN_END;
+    }
+
+    async function handleLiveEndAuto() {
+        const liveState = twitchService.getLiveState();
+        const participants = Object.keys(liveState.currentLive.users || {}).length;
+        const summary = twitchService.generateLiveStatsSummary(participants);
+
+        twitchService.stopCurrentLive();
+
+        await sendContestLog(
+            `⚫ **Live terminé automatiquement**\n\n` +
+            summary
+        ).catch(() => null);
+
+        console.log('⚫ Fin de live détectée automatiquement');
+    }
+
     setInterval(() => {
+        if (!config.TWITCH_AUTO_SCAN_ENABLED) return;
+        if (!isInAutoScanWindow()) return;
+
+        const liveState = twitchService.getLiveState();
+        if (liveState.liveContestActive) return;
+
         twitchService.checkTwitchLive(client, async () => {
             await processLivePhrases(client).catch(console.error);
-        });
-    }, 2 * 60 * 1000);
+        }).catch(console.error);
+    }, config.TWITCH_AUTO_SCAN_INTERVAL_MS);
+
+    setInterval(() => {
+        const liveState = twitchService.getLiveState();
+        if (!liveState.liveContestActive) return;
+
+        twitchService.checkTwitchLive(
+            client,
+            async () => {
+                await processLivePhrases(client).catch(console.error);
+            },
+            handleLiveEndAuto
+        ).catch(console.error);
+    }, config.TWITCH_LIVE_END_SCAN_INTERVAL_MS);
 
     setInterval(cleanExpiredRoles, 10 * 60 * 1000);
     cleanExpiredRoles();
@@ -123,6 +170,7 @@ client.on('interactionCreate', async (interaction) => {
                 setupShop,
                 sendLog,
                 sendContestLog,
+                processLivePhrases,
             });
         }
 

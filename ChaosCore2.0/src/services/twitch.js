@@ -323,7 +323,27 @@ function createTwitchChat(discordClient, sendContestLog) {
                 console.log(`👻 !karma par ${twitchName} → ${liveStats.karma}`);
                 return;
             }
+            if (cmd === '!resetstat') {
+                const discordId = await db.getDiscordIdFromTwitch(twitchName);
+                if (!discordId) return;
 
+                const guild = discordClient.guilds.cache.get(process.env.GUILD_ID);
+                if (!guild) return;
+
+                const member = await guild.members.fetch(discordId).catch(() => null);
+                if (!member) return;
+
+                const isTeam = member.roles.cache.some(role => role.name === config.TEAM_ROLE_NAME);
+                if (!isTeam) return;
+
+                resetLiveStats();
+
+                await twitchChat.say(channel, '🧹 Stats du live réinitialisées par la Team.');
+                console.log(`🧹 !resetstat par ${twitchName}`);
+
+                return;
+            }
+            
             if (cmd === '!stat' || cmd === '!stats') {
                 const participants = Object.keys(currentLive.users || {}).length;
                 await twitchChat.say(channel, generateLiveStatsSummary(participants).replace(/\*\*/g, ''));
@@ -407,7 +427,7 @@ function createTwitchChat(discordClient, sendContestLog) {
     };
 }
 
-async function checkTwitchLive(discordClient, onLiveStart) {
+async function checkTwitchLive(discordClient, onLiveStart, onLiveEnd) {
     try {
         const token = await getAppAccessToken();
 
@@ -424,16 +444,38 @@ async function checkTwitchLive(discordClient, onLiveStart) {
         const stream = response.data.data[0];
 
         if (!stream) {
-            if (twitchWasLive) {
+            if (twitchWasLive || liveContestActive) {
                 console.log('⚫ Twitch est passé hors ligne');
+
+                twitchWasLive = false;
+
+                if (typeof onLiveEnd === 'function') {
+                    await onLiveEnd();
+                } else {
+                    liveContestActive = false;
+                }
+
+                return {
+                    isLive: false,
+                    started: false,
+                    ended: true,
+                };
             }
 
-            twitchWasLive = false;
-            liveContestActive = false;
-            return;
+            return {
+                isLive: false,
+                started: false,
+                ended: false,
+            };
         }
 
-        if (twitchWasLive) return;
+        if (twitchWasLive || liveContestActive) {
+            return {
+                isLive: true,
+                started: false,
+                ended: false,
+            };
+        }
 
         twitchWasLive = true;
         liveContestActive = true;
@@ -462,8 +504,21 @@ async function checkTwitchLive(discordClient, onLiveStart) {
         if (typeof onLiveStart === 'function') {
             await onLiveStart();
         }
+
+        return {
+            isLive: true,
+            started: true,
+            ended: false,
+        };
     } catch (error) {
         console.error('❌ Erreur checkTwitchLive:', error.response?.data || error.message);
+
+        return {
+            isLive: false,
+            started: false,
+            ended: false,
+            error: true,
+        };
     }
 }
 

@@ -38,7 +38,7 @@ const commandDefinitions = [
     new SlashCommandBuilder().setName('resume').setDescription('Afficher le classement Tickets du Chaos'),
 
     new SlashCommandBuilder().setName('live').setDescription('Démarrer le comptage live Twitch'),
-
+new SlashCommandBuilder().setName('live').setDescription('Démarrer le comptage live Twitch'),
     new SlashCommandBuilder().setName('stop').setDescription('Arrêter le comptage live Twitch'),
 
     new SlashCommandBuilder()
@@ -86,7 +86,7 @@ function requireTeam(interaction) {
     return true;
 }
 
-async function handleCommand(interaction, { twitchService, setupShop, discordClient, sendLog, sendContestLog }) {
+async function handleCommand(interaction, { twitchService, setupShop, discordClient, sendLog, sendContestLog, processLivePhrases }) {
     if (interaction.commandName === 'ping') {
         return interaction.reply('🏓 ChaosCore est vivant !');
     }
@@ -223,9 +223,39 @@ async function handleCommand(interaction, { twitchService, setupShop, discordCli
 
         return interaction.editReply(`🏆 **Classement Tickets du Chaos**\n\n${lines.join('\n')}`);
     }
-
-    if (interaction.commandName === 'live') {
+    if (interaction.commandName === 'scan') {
         if (!requireTeam(interaction)) return;
+
+        await interaction.deferReply({ flags: 64 });
+
+        const result = await twitchService.checkTwitchLive(discordClient, async () => {
+            if (typeof processLivePhrases === 'function') {
+                await processLivePhrases(discordClient).catch(console.error);
+            }
+        });
+
+        if (result?.started) {
+            return interaction.editReply('🔴 Live détecté ! Annonce envoyée et comptage activé.');
+        }
+
+        if (result?.isLive) {
+            return interaction.editReply('🔴 Le live est déjà actif dans ChaosCore.');
+        }
+
+        return interaction.editReply('⚫ Aucun live Twitch détecté pour le moment.');
+    }
+
+        if (interaction.commandName === 'live') {
+        if (!requireTeam(interaction)) return;
+
+        const liveState = twitchService.getLiveState();
+
+        if (liveState.liveContestActive) {
+            return interaction.reply({
+                content: '⚠️ Un live est déjà actif dans ChaosCore.',
+                flags: 64,
+            });
+        }
 
         twitchService.setLiveActive(true);
         twitchService.resetCurrentLive();
@@ -239,10 +269,18 @@ async function handleCommand(interaction, { twitchService, setupShop, discordCli
         ).catch(() => null);
     }
 
-        if (interaction.commandName === 'stop') {
+            if (interaction.commandName === 'stop') {
         if (!requireTeam(interaction)) return;
 
         const liveState = twitchService.getLiveState();
+
+        if (!liveState.liveContestActive) {
+            return interaction.reply({
+                content: '⚠️ Aucun live actif à arrêter.',
+                flags: 64,
+            });
+        }
+
         const participants = Object.keys(liveState.currentLive.users || {}).length;
         const summary = twitchService.generateLiveStatsSummary(participants);
 
@@ -255,7 +293,7 @@ async function handleCommand(interaction, { twitchService, setupShop, discordCli
             summary
         ).catch(() => null);
     }
-
+    
     if (interaction.commandName === 'twitch') {
         if (!requireTeam(interaction)) return;
         await interaction.deferReply({ flags: 64 });
