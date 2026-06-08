@@ -98,7 +98,7 @@ async function registerCommands() {
     console.log('✅ Commandes slash enregistrées');
 }
 
-client.once('ready', async () => {
+client.once('clientReady', async () => {
     console.log(`✅ ChaosCore connecté en tant que ${client.user.tag}`);
 
     await db.initDatabase();
