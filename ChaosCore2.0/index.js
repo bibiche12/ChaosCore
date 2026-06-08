@@ -3,7 +3,6 @@ require('dotenv').config();
 const path = require('path');
 const { Client, GatewayIntentBits, Partials, REST, Routes } = require('discord.js');
 const express = require('express');
-const path = require('path');
 const security = require('./src/services/security');
 const config = require('./src/config');
 const db = require('./src/db/queries');
