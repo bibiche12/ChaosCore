@@ -247,7 +247,9 @@ app.get('/overlay/latest', (req, res) => {
         ]
     });
 });
-
+app.get('/test', (req, res) => {
+    res.send('TEST OK ✅');
+});
 app.listen(PORT, () => {
     console.log(`🌐 Overlay Web démarré sur le port ${PORT}`);
 });
