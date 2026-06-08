@@ -3,6 +3,7 @@ require('dotenv').config();
 const path = require('path');
 const { Client, GatewayIntentBits, Partials, REST, Routes } = require('discord.js');
 const express = require('express');
+
 const security = require('./src/services/security');
 const config = require('./src/config');
 const db = require('./src/db/queries');
@@ -231,29 +232,20 @@ app.get('/overlay-view', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'overlay.html'));
 });
 
-app.get('/overlay/latest', async (req, res) => {
-    try {
-        const events = await db.getLatestOverlayEvents(20);
+app.get('/overlay', (req, res) => {
+    res.redirect('/overlay-view');
+});
 
-        if (!events || events.length === 0) {
-            return res.json({ active: false, items: [] });
-        }
-
-        return res.json({
-            active: true,
-            items: events.map(event => ({
-                id: event.id,
-                source: event.source,
-                rewardName: event.title,
-                userInput: event.text || '',
-                author: event.author || '',
-                createdAt: event.created_at,
-            })),
-        });
-    } catch (error) {
-        console.error('❌ Erreur route /overlay/latest:', error);
-        return res.status(500).json({ active: false, items: [] });
-    }
+app.get('/overlay/latest', (req, res) => {
+    res.json({
+        active: true,
+        items: [
+            {
+                rewardName: 'Test ChaosCore',
+                userInput: 'Overlay connecté ✅'
+            }
+        ]
+    });
 });
 
 app.listen(PORT, () => {
