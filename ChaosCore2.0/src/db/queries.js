@@ -109,6 +109,14 @@ await pool.query(`
         ADD COLUMN IF NOT EXISTS completed BOOLEAN DEFAULT false;
     `);
 
+    await pool.query(`
+    CREATE TABLE IF NOT EXISTS bump_timer (
+        guild_id TEXT PRIMARY KEY,
+        channel_id TEXT NOT NULL,
+        next_bump_at BIGINT NOT NULL
+    );
+`);
+
     console.log('✅ Connexion PostgreSQL prête');
 }
 
@@ -531,6 +539,27 @@ async function markMonthlyBonusGiven(monthKey, usersCount) {
          ON CONFLICT (month_key) DO NOTHING`,
         [monthKey, usersCount]
     );
+
+}
+async function saveNextBump(guildId, channelId, nextBumpAt) {
+    await pool.query(
+        `INSERT INTO bump_timer (guild_id, channel_id, next_bump_at)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (guild_id)
+         DO UPDATE SET
+            channel_id = EXCLUDED.channel_id,
+            next_bump_at = EXCLUDED.next_bump_at`,
+        [guildId, channelId, nextBumpAt]
+    );
+}
+
+async function getNextBump(guildId) {
+    const result = await pool.query(
+        `SELECT * FROM bump_timer WHERE guild_id = $1`,
+        [guildId]
+    );
+
+    return result.rows[0] || null;
 }
 module.exports = {
     hasMonthlyBonusBeenGiven,
@@ -573,4 +602,7 @@ markMonthlyBonusGiven,
     insertTemporaryRole,
     getExpiredTemporaryRoles,
     deleteTemporaryRole,
+
+    saveNextBump,
+getNextBump,
 };

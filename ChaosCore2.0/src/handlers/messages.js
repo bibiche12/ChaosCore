@@ -36,24 +36,60 @@ function isDisboardBumpDone(message) {
     return fullText.includes('Bump effectué');
 }
 
+async function sendDisboardReminder(discordClient, channelId = config.DISBOARD_CHANNEL_ID) {
+    const channel = await discordClient.channels.fetch(channelId).catch(() => null);
+    if (!channel) return;
+
+    await channel.send(
+        `⏰ **Rappel Disboard**\n\n` +
+        `Le dernier bump a été effectué il y a 2h.\n` +
+        `Vous pouvez refaire \`/bump\` maintenant. 🦌`
+    ).catch(console.error);
+}
+
+async function scheduleDisboardReminder(discordClient, delay) {
+    if (disboardReminderTimeout) {
+        clearTimeout(disboardReminderTimeout);
+    }
+
+    disboardReminderTimeout = setTimeout(async () => {
+        await sendDisboardReminder(discordClient);
+    }, delay);
+}
+
 async function handleDisboardReminder(message, discordClient) {
     if (disboardReminderTimeout) {
         clearTimeout(disboardReminderTimeout);
     }
 
-    console.log('📌 Bump Disboard détecté. Rappel programmé dans 2h.');
+    const nextBumpAt = Date.now() + config.DISBOARD_INTERVAL_MS;
 
-    disboardReminderTimeout = setTimeout(async () => {
-        const channel = await discordClient.channels.fetch(config.DISBOARD_CHANNEL_ID).catch(() => null);
+    await db.saveNextBump(
+        message.guild.id,
+        config.DISBOARD_CHANNEL_ID,
+        nextBumpAt
+    );
 
-        if (!channel) return;
+    console.log('📌 Bump Disboard détecté. Rappel enregistré en base et programmé dans 2h.');
 
-        await channel.send(
-            `⏰ **Rappel Disboard**\n\n` +
-            `Le dernier bump a été effectué il y a 2h.\n` +
-            `Vous pouvez refaire \`/bump\` maintenant. 🦌`
-        ).catch(console.error);
-    }, config.DISBOARD_INTERVAL_MS);
+    await scheduleDisboardReminder(discordClient, config.DISBOARD_INTERVAL_MS);
+}
+
+async function restoreDisboardReminder(discordClient) {
+    const saved = await db.getNextBump(process.env.GUILD_ID);
+
+    if (!saved) return;
+
+    const delay = Number(saved.next_bump_at) - Date.now();
+
+    if (delay <= 0) {
+        await sendDisboardReminder(discordClient, saved.channel_id);
+        return;
+    }
+
+    await scheduleDisboardReminder(discordClient, delay);
+
+    console.log(`🔁 Rappel Disboard restauré. Prochain rappel dans ${Math.round(delay / 60000)} min.`);
 }
 
 async function handleEmojiUpload(message, discordClient, pendingEmojiRequests) {
@@ -237,4 +273,5 @@ async function handleMessage(message, discordClient, sendLog, pendingEmojiReques
 
 module.exports = {
     handleMessage,
+    restoreDisboardReminder,
 };

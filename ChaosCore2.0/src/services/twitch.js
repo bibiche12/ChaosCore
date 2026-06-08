@@ -312,11 +312,11 @@ function createTwitchChat(discordClient, sendContestLog) {
                 return;
             }
 
-            if (cmd === '!peur') {
-                liveStats.peurs += 1;
-                console.log(`😱 !peur par ${twitchName} → ${liveStats.peurs}`);
-                return;
-            }
+            if (cmd === '!peur' || cmd === '!cri') {
+    liveStats.peurs += 1;
+    console.log(`😱 ${cmd} par ${twitchName} → ${liveStats.peurs}`);
+    return;
+}
 
             if (cmd === '!karma') {
                 liveStats.karma += 1;

@@ -10,8 +10,7 @@ const twitchService = require('./src/services/twitch');
 const { setupShop, processLivePhrases } = require('./src/services/shop');
 const { handleCommand, commandDefinitions } = require('./src/handlers/commands');
 const { handleButton, handleModal, handleSelectMenu, pendingEmojiRequests } = require('./src/handlers/buttons');
-const { handleMessage } = require('./src/handlers/messages');
-
+const { handleMessage, restoreDisboardReminder } = require('./src/handlers/messages');
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -103,7 +102,7 @@ client.once('ready', async () => {
     console.log(`✅ ChaosCore connecté en tant que ${client.user.tag}`);
 
     await db.initDatabase();
-    await registerCommands();
+await registerCommands();
 
     const twitchChat = twitchService.createTwitchChat(client, sendContestLog);
     twitchChat.connect().catch(error => {
