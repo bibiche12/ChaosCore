@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>ChaosCore Dashboard</title>
+    <link rel="stylesheet" href="/dashboard-assets/css/dashboard.css">
+</head>
+<body>
+
+<div class="dashboard-layout">
+
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-icon">⚡</div>
+            <div>
+                <h1>ChaosCore</h1>
+                <span>Streamer Assistant</span>
+            </div>
+        </div>
+
+        <nav class="menu">
+            <a class="active" href="#">🏠 Accueil</a>
+            <a href="#">🎮 Twitch</a>
+            <a href="#">💰 Économie</a>
+            <a href="#">🛒 Boutique</a>
+            <a href="#">🎟️ Concours</a>
+            <a href="#">🚀 Bump</a>
+            <a href="#">🎭 Autorôles</a>
+            <a href="#">📢 Bienvenue</a>
+            <a href="#">📝 Embeds</a>
+            <a href="#">📊 Sondages</a>
+            <a href="#">🛡️ Protection</a>
+            <a href="#">⚙️ Paramètres</a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <span>Connecté en tant que</span>
+            <strong><%= user.username %></strong>
+            <a href="/logout">Déconnexion</a>
+        </div>
+    </aside>
+
+    <main class="main-content">
+
+        <header class="topbar">
+            <div>
+                <h2>Tableau de bord</h2>
+                <p><%= guildName %></p>
+            </div>
+
+            <div class="status-pill">
+                <span></span>
+                Bot en ligne
+            </div>
+        </header>
+
+        <section class="hero-card">
+            <div>
+                <h3>Bienvenue sur ChaosCore</h3>
+                <p>
+                    Configure ton assistant Discord/Twitch depuis une seule interface.
+                    Lives, économie, boutique, concours, autorôles et sécurité.
+                </p>
+            </div>
+
+            <button>Configurer Twitch</button>
+        </section>
+
+        <section class="stats-grid">
+            <div class="stat-card">
+                <span>👥</span>
+                <p>Membres</p>
+                <h3><%= memberCount %></h3>
+            </div>
+
+            <div class="stat-card">
+                <span>💬</span>
+                <p>Salons</p>
+                <h3><%= channelsCount %></h3>
+            </div>
+
+            <div class="stat-card">
+                <span>🎭</span>
+                <p>Rôles</p>
+                <h3><%= rolesCount %></h3>
+            </div>
+
+            <div class="stat-card">
+                <span>🛒</span>
+                <p>Commandes boutique</p>
+                <h3>--</h3>
+            </div>
+        </section>
+
+        <section class="modules-grid">
+            <div class="module-card">
+                <h4>🎮 Twitch</h4>
+                <p>Annonce live, récompenses, présence, subs, cheers et statistiques.</p>
+                <span class="tag premium">Premium</span>
+            </div>
+
+            <div class="module-card">
+                <h4>💰 Économie</h4>
+                <p>Monnaie personnalisée, gains par message, bonus mensuel et historiques.</p>
+                <span class="tag premium">Premium</span>
+            </div>
+
+            <div class="module-card">
+                <h4>🛒 Boutique</h4>
+                <p>Articles personnalisés, images, validation automatique ou manuelle.</p>
+                <span class="tag premium">Premium</span>
+            </div>
+
+            <div class="module-card">
+                <h4>🎟️ Concours</h4>
+                <p>Tickets, participations, classement et tirage des gagnants.</p>
+                <span class="tag premium">Premium</span>
+            </div>
+
+            <div class="module-card">
+                <h4>🎭 Autorôles</h4>
+                <p>Boutons, menus déroulants et rôles automatiques pour les membres.</p>
+                <span class="tag free">Gratuit</span>
+            </div>
+
+            <div class="module-card">
+                <h4>🛡️ Protection</h4>
+                <p>Anti-spam, anti-raid, anti-link et sécurité automatique.</p>
+                <span class="tag free">Gratuit</span>
+            </div>
+        </section>
+
+    </main>
+
+</div>
+
+</body>
+</html>
