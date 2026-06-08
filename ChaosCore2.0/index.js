@@ -102,7 +102,9 @@ client.once('clientReady', async () => {
     console.log(`✅ ChaosCore connecté en tant que ${client.user.tag}`);
 
     await db.initDatabase();
-await registerCommands();
+    await registerCommands();
+
+    await restoreDisboardReminder(client);
 
     const twitchChat = twitchService.createTwitchChat(client, sendContestLog);
     twitchChat.connect().catch(error => {
