@@ -10,14 +10,14 @@ module.exports = function setupDashboard(app, client) {
 
     app.use('/dashboard-assets', express.static('./src/dashboard/public'));
 
-    app.use(session({
-        secret: process.env.DISCORD_CLIENT_SECRET,
-        resave: false,
-        saveUninitialized: false,
-        cookie: {
-            maxAge: 24 * 60 * 60 * 1000,
-        },
-    }));
+   app.use(session({
+    secret: process.env.SESSION_SECRET || process.env.DISCORD_CLIENT_SECRET || 'chaoscore_secret_2026',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        maxAge: 24 * 60 * 60 * 1000,
+    },
+}));
 
     app.use(passport.initialize());
     app.use(passport.session());
