@@ -75,7 +75,10 @@ async function handleShopButton(interaction, discordClient, sendLog) {
         const purchase = pendingRolePurchases.get(user.id);
 
         if (!purchase) {
-            await interaction.reply({ content: '❌ Aucune création de rôle en cours.', flags: 64 });
+            await interaction.reply({
+                content: '❌ Aucune création de rôle en cours.',
+                flags: 64,
+            });
             return true;
         }
 
@@ -92,7 +95,9 @@ async function handleShopButton(interaction, discordClient, sendLog) {
 
         pendingRolePurchases.delete(user.id);
 
-        const logChannel = await discordClient.channels.fetch(config.LOG_CHANNEL_ID).catch(() => null);
+        const logChannel = await discordClient.channels
+            .fetch(config.LOG_CHANNEL_ID)
+            .catch(() => null);
 
         if (logChannel) {
             await logChannel.send({
@@ -111,12 +116,18 @@ async function handleShopButton(interaction, discordClient, sendLog) {
             content: '✅ Ta demande de rôle a été envoyée à la Team pour validation.',
             flags: 64,
         });
+
         return true;
     }
 
     if (customId.startsWith('cancel_role_purchase_')) {
         pendingRolePurchases.delete(user.id);
-        await interaction.reply({ content: '❌ Achat annulé.', flags: 64 });
+
+        await interaction.reply({
+            content: '❌ Achat annulé.',
+            flags: 64,
+        });
+
         return true;
     }
 
@@ -134,6 +145,7 @@ async function handleShopButton(interaction, discordClient, sendLog) {
 
         modal.addComponents(new ActionRowBuilder().addComponents(input));
         await interaction.showModal(modal);
+
         return true;
     }
 
@@ -159,6 +171,7 @@ async function handleShopButton(interaction, discordClient, sendLog) {
             components: [new ActionRowBuilder().addComponents(durationMenu)],
             flags: 64,
         });
+
         return true;
     }
 
@@ -167,18 +180,24 @@ async function handleShopButton(interaction, discordClient, sendLog) {
         const request = await db.getShopRequest(requestId);
 
         if (!request) {
-            await interaction.reply({ content: '❌ Demande introuvable.', flags: 64 });
+            await interaction.reply({
+                content: '❌ Demande introuvable.',
+                flags: 64,
+            });
             return true;
         }
 
         if (request.status !== 'pending') {
-            await interaction.reply({ content: '❌ Cette demande a déjà été traitée.', flags: 64 });
+            await interaction.reply({
+                content: '❌ Cette demande a déjà été traitée.',
+                flags: 64,
+            });
             return true;
         }
 
-        const newBalance = await db.addPoints(request.user_id, -request.price);
+        const userData = await db.getUserPoints(request.user_id);
 
-        if (newBalance === null) {
+        if (userData.balance < request.price) {
             await db.updateShopRequestStatus(requestId, 'rejected');
 
             await interaction.reply({
@@ -188,13 +207,18 @@ async function handleShopButton(interaction, discordClient, sendLog) {
                     `💰 Prix : **${request.price} Bichcoins**`,
                 flags: 64,
             });
+
             return true;
         }
+
+        const newBalance = await db.addPoints(request.user_id, -request.price);
 
         await db.updateShopRequestStatus(requestId, 'approved');
 
         if (request.type === 'gage') {
-            const liveChannel = await discordClient.channels.fetch(config.LIVE_AUTO_CHANNEL_ID).catch(() => null);
+            const liveChannel = await discordClient.channels
+                .fetch(config.LIVE_AUTO_CHANNEL_ID)
+                .catch(() => null);
 
             if (liveChannel) {
                 const button = new ActionRowBuilder().addComponents(
@@ -217,7 +241,10 @@ async function handleShopButton(interaction, discordClient, sendLog) {
 
         if (request.type === 'phrase') {
             const phraseData = JSON.parse(request.content);
-            const liveChannel = await discordClient.channels.fetch(config.LIVE_AUTO_CHANNEL_ID).catch(() => null);
+
+            const liveChannel = await discordClient.channels
+                .fetch(config.LIVE_AUTO_CHANNEL_ID)
+                .catch(() => null);
 
             if (liveChannel) {
                 const activeMessage = await liveChannel.send({
@@ -246,7 +273,9 @@ async function handleShopButton(interaction, discordClient, sendLog) {
 
                 await member.roles.add(newRole);
 
-                const expiresAt = new Date(Date.now() + roleData.duration * 24 * 60 * 60 * 1000);
+                const expiresAt = new Date(
+                    Date.now() + roleData.duration * 24 * 60 * 60 * 1000
+                );
 
                 await db.insertTemporaryRole(
                     request.user_id,
@@ -263,15 +292,19 @@ async function handleShopButton(interaction, discordClient, sendLog) {
             `👤 Membre : <@${request.user_id}>\n` +
             `📌 Type : **${request.type}**\n` +
             `💰 Débité : **${request.price} Bichcoins**\n` +
+            `💳 Nouveau solde : **${newBalance} Bichcoins**\n` +
             `👑 Validé par : ${user}`
         ).catch(() => null);
 
-        await interaction.message.edit({ components: [] }).catch(() => null);
+        await interaction.message.edit({
+            components: [],
+        }).catch(() => null);
 
         await interaction.reply({
             content: `✅ Demande **#${requestId}** acceptée.`,
             flags: 64,
         });
+
         return true;
     }
 
@@ -280,12 +313,18 @@ async function handleShopButton(interaction, discordClient, sendLog) {
         const request = await db.getShopRequest(requestId);
 
         if (!request) {
-            await interaction.reply({ content: '❌ Demande introuvable.', flags: 64 });
+            await interaction.reply({
+                content: '❌ Demande introuvable.',
+                flags: 64,
+            });
             return true;
         }
 
         if (request.status !== 'pending') {
-            await interaction.reply({ content: '❌ Cette demande a déjà été traitée.', flags: 64 });
+            await interaction.reply({
+                content: '❌ Cette demande a déjà été traitée.',
+                flags: 64,
+            });
             return true;
         }
 
@@ -298,12 +337,15 @@ async function handleShopButton(interaction, discordClient, sendLog) {
             `👑 Refusé par : ${user}`
         ).catch(() => null);
 
-        await interaction.message.edit({ components: [] }).catch(() => null);
+        await interaction.message.edit({
+            components: [],
+        }).catch(() => null);
 
         await interaction.reply({
             content: `❌ Demande **#${requestId}** refusée.`,
             flags: 64,
         });
+
         return true;
     }
 
@@ -352,6 +394,7 @@ async function handleShopModal(interaction, discordClient) {
             ],
             flags: 64,
         });
+
         return true;
     }
 
@@ -367,7 +410,9 @@ async function handleShopModal(interaction, discordClient) {
             config.SHOP_PRICES.gage
         );
 
-        const logChannel = await discordClient.channels.fetch(config.LOG_CHANNEL_ID).catch(() => null);
+        const logChannel = await discordClient.channels
+            .fetch(config.LOG_CHANNEL_ID)
+            .catch(() => null);
 
         if (logChannel) {
             await logChannel.send({
@@ -384,6 +429,7 @@ async function handleShopModal(interaction, discordClient) {
             content: '✅ Ta demande de gage a été envoyée à la Team pour validation.',
             flags: 64,
         });
+
         return true;
     }
 
@@ -414,7 +460,9 @@ async function handleShopModal(interaction, discordClient) {
 
         pendingPhraseRequests.delete(user.id);
 
-        const logChannel = await discordClient.channels.fetch(config.LOG_CHANNEL_ID).catch(() => null);
+        const logChannel = await discordClient.channels
+            .fetch(config.LOG_CHANNEL_ID)
+            .catch(() => null);
 
         if (logChannel) {
             await logChannel.send({
@@ -432,6 +480,7 @@ async function handleShopModal(interaction, discordClient) {
             content: '✅ Ta demande de phrase a été envoyée à la Team pour validation.',
             flags: 64,
         });
+
         return true;
     }
 
@@ -463,6 +512,7 @@ async function handleShopSelectMenu(interaction) {
         modal.addComponents(new ActionRowBuilder().addComponents(input));
 
         await interaction.showModal(modal);
+
         return true;
     }
 
@@ -470,7 +520,10 @@ async function handleShopSelectMenu(interaction) {
         const purchase = pendingRolePurchases.get(user.id);
 
         if (!purchase) {
-            await interaction.reply({ content: '❌ Aucune création de rôle en cours.', flags: 64 });
+            await interaction.reply({
+                content: '❌ Aucune création de rôle en cours.',
+                flags: 64,
+            });
             return true;
         }
 
@@ -494,7 +547,10 @@ async function handleShopSelectMenu(interaction) {
         const purchase = pendingRolePurchases.get(user.id);
 
         if (!purchase) {
-            await interaction.reply({ content: '❌ Aucune création de rôle en cours.', flags: 64 });
+            await interaction.reply({
+                content: '❌ Aucune création de rôle en cours.',
+                flags: 64,
+            });
             return true;
         }
 
@@ -538,6 +594,7 @@ async function handleShopSelectMenu(interaction) {
             components: [confirmButtons],
             flags: 64,
         });
+
         return true;
     }
 

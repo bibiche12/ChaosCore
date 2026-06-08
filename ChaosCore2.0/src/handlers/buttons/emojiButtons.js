@@ -27,21 +27,23 @@ async function handleEmojiButton(interaction) {
             return true;
         }
 
-        const newBalance = await db.addPoints(
-            request.user_id,
-            -config.SHOP_PRICES.emoji
-        );
+        const userData = await db.getUserPoints(request.user_id);
 
-        if (newBalance === null) {
-            await db.updateEmojiRequestStatus(requestId, 'rejected');
+if (userData.balance < config.SHOP_PRICES.emoji) {
+    await db.updateEmojiRequestStatus(requestId, 'rejected');
 
-            await interaction.reply({
-                content: '❌ Solde insuffisant. Demande refusée automatiquement.',
-                flags: 64,
-            });
+    await interaction.reply({
+        content: '❌ Solde insuffisant. Demande refusée automatiquement.',
+        flags: 64,
+    });
 
-            return true;
-        }
+    return true;
+}
+
+const newBalance = await db.addPoints(
+    request.user_id,
+    -config.SHOP_PRICES.emoji
+);
 
         const imageResponse = await axios.get(request.image_url, {
             responseType: 'arraybuffer',
