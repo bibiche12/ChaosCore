@@ -35,6 +35,18 @@ async function handleOverlayButton(interaction) {
     }
 
     if (customId.startsWith('complete_shop_gage_')) {
+        const eventId = customId.replace('complete_shop_gage_', '');
+
+        const event = await db.completeChannelPointEvent(eventId, user.id);
+
+        if (!event) {
+            await interaction.reply({
+                content: '❌ Gage introuvable dans l’overlay.',
+                flags: 64,
+            });
+            return true;
+        }
+
         await interaction.message.edit({
             content:
                 interaction.message.content +
@@ -43,7 +55,7 @@ async function handleOverlayButton(interaction) {
         }).catch(() => null);
 
         await interaction.reply({
-            content: '✅ Gage marqué comme effectué.',
+            content: '✅ Gage marqué comme effectué. Il disparaîtra de la bannière.',
             flags: 64,
         });
 

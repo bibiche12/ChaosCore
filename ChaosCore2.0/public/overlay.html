@@ -64,7 +64,9 @@
 
         async function refreshOverlay() {
             try {
-                const response = await fetch('/overlay/latest');
+                const response = await fetch('/overlay/latest?t=' + Date.now(), {
+    cache: 'no-store'
+});
                 const data = await response.json();
 
                 if (!data.active || !data.items || data.items.length === 0) {
