@@ -222,11 +222,6 @@ client.on('messageCreate', (message) => {
 });
 
 const app = express();
-const setupDashboard = require('./src/dashboard/dashboard');
-
-setupDashboard(app, client);
-
-const PORT = process.env.PORT || 3000;
 
 app.get('/overlay-view', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'overlay.html'));
