@@ -2,16 +2,8 @@ const { SlashCommandBuilder } = require('discord.js');
 
 const commandDefinitions = [
     new SlashCommandBuilder()
-        .setName('setuproles')
-        .setDescription('Créer les messages de rôles'),
-
-    new SlashCommandBuilder()
         .setName('ping')
         .setDescription('Vérifie que ChaosCore fonctionne'),
-
-    new SlashCommandBuilder()
-        .setName('solde')
-        .setDescription('Voir ton solde de Bichcoins'),
 
     new SlashCommandBuilder()
         .setName('profil')
@@ -48,10 +40,6 @@ const commandDefinitions = [
         ),
 
     new SlashCommandBuilder()
-        .setName('tickets')
-        .setDescription('Voir tes Tickets du Chaos'),
-
-    new SlashCommandBuilder()
         .setName('adticket')
         .setDescription('Ajouter des Tickets du Chaos à un membre')
         .addUserOption(o =>
@@ -83,7 +71,7 @@ const commandDefinitions = [
 
     new SlashCommandBuilder()
         .setName('resume')
-        .setDescription('Afficher le classement Tickets du Chaos'),
+        .setDescription('Afficher le résumé / classement Tickets du Chaos'),
 
     new SlashCommandBuilder()
         .setName('live')
@@ -116,16 +104,20 @@ const commandDefinitions = [
         ),
 
     new SlashCommandBuilder()
-        .setName('twitchlinks')
-        .setDescription('Afficher les liaisons Twitch enregistrées'),
-
-    new SlashCommandBuilder()
         .setName('setupboutique')
         .setDescription('Installer ou mettre à jour la boutique Oncle’Bich'),
 
     new SlashCommandBuilder()
+        .setName('viderboutique')
+        .setDescription('Vider les messages de la boutique Oncle’Bich'),
+
+    new SlashCommandBuilder()
+        .setName('cleanupshop')
+        .setDescription('Nettoyer les demandes boutique expirées ou terminées'),
+
+    new SlashCommandBuilder()
         .setName('clearoverlay')
-        .setDescription('Vider tous les gages de la bannière'),
+        .setDescription('Vider tous les gages de la bannière OBS'),
 
     new SlashCommandBuilder()
         .setName('testoverlay')
