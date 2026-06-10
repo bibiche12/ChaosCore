@@ -285,31 +285,31 @@ function createTwitchChat(discordClient, sendContestLog) {
 
             const cmd = message.toLowerCase().trim();
 
-            if (cmd === '!vie') {
+            if (cmd === '!vie' || cmd === '!+vie') {
                 liveStats.vies += 1;
                 console.log(`❤️ !vie par ${twitchName} → ${liveStats.vies}`);
                 return;
             }
 
-            if (cmd === '!mort') {
+            if (cmd === '!mort' || cmd === '!+mort') {
                 liveStats.morts += 1;
                 console.log(`💀 !mort par ${twitchName} → ${liveStats.morts}`);
                 return;
             }
 
-            if (cmd === '!fail') {
+            if (cmd === '!fail' || cmd === '!+fail') {
                 liveStats.fails += 1;
                 console.log(`🤦 !fail par ${twitchName} → ${liveStats.fails}`);
                 return;
             }
 
-            if (cmd === '!peur' || cmd === '!cri') {
+            if (cmd === '!peur' || cmd === '!+peur' || cmd === '!cri' || cmd === '!+cri') {
     liveStats.peurs += 1;
     console.log(`😱 ${cmd} par ${twitchName} → ${liveStats.peurs}`);
     return;
 }
 
-            if (cmd === '!karma') {
+            if (cmd === '!karma' || cmd === '!+karma') {
                 liveStats.karma += 1;
                 console.log(`👻 !karma par ${twitchName} → ${liveStats.karma}`);
                 return;

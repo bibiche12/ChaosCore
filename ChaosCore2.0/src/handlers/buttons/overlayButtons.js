@@ -34,19 +34,18 @@ async function handleOverlayButton(interaction) {
         return true;
     }
 
-    if (customId.startsWith('complete_shop_gage_')) {
-        const eventId = customId.replace('complete_shop_gage_', '');
+   if (customId.startsWith('complete_shop_gage_')) {
+    const eventId = customId.replace('complete_shop_gage_', '');
 
-        const event = await db.completeChannelPointEvent(eventId, user.id);
+    const event = await db.getShopRequest(eventId);
 
-        if (!event) {
-            await interaction.reply({
-                content: '❌ Gage introuvable dans l’overlay.',
-                flags: 64,
-            });
-            return true;
-        }
-
+    if (!event) {
+        await interaction.reply({
+            content: '❌ Gage boutique introuvable.',
+            flags: 64,
+        });
+        return true;
+    }
         await interaction.message.edit({
             content:
                 interaction.message.content +
