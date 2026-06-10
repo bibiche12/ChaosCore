@@ -1,7 +1,17 @@
+// ============================================================
+// IMPORTS
+// ============================================================
+
 const config = require('../../config');
 
+// ============================================================
+// PERMISSIONS
+// ============================================================
+
 function hasTeamRole(member) {
-    return member.roles.cache.some(role => role.name === config.TEAM_ROLE_NAME);
+    return member.roles.cache.some(
+        role => role.name === config.TEAM_ROLE_NAME
+    );
 }
 
 function requireTeam(interaction) {
@@ -17,6 +27,20 @@ function requireTeam(interaction) {
     return true;
 }
 
+// ============================================================
+// HELPERS
+// ============================================================
+
+async function fetchShopChannel(discordClient) {
+    return discordClient.channels
+        .fetch(config.SHOP_CHANNEL_ID)
+        .catch(() => null);
+}
+
+// ============================================================
+// HANDLER PRINCIPAL
+// ============================================================
+
 async function handleShopCommand(
     interaction,
     {
@@ -25,26 +49,10 @@ async function handleShopCommand(
     }
 ) {
     if (interaction.commandName === 'setupboutique') {
-        if (!requireTeam(interaction)) return true;
-
-        await interaction.deferReply({ flags: 64 });
-
-        const shopChannel = await discordClient.channels
-            .fetch(config.SHOP_CHANNEL_ID)
-            .catch(() => null);
-
-        if (!shopChannel) {
-            await interaction.editReply(
-                '❌ Salon boutique introuvable.'
-            );
-
-            return true;
-        }
-
-        await setupShop(shopChannel);
-
-        await interaction.editReply(
-            '✅ Boutique Oncle’Bich installée / mise à jour.'
+        await handleSetupShopCommand(
+            interaction,
+            discordClient,
+            setupShop
         );
 
         return true;
@@ -52,6 +60,42 @@ async function handleShopCommand(
 
     return false;
 }
+
+// ============================================================
+// /SETUPBOUTIQUE
+// ============================================================
+
+async function handleSetupShopCommand(
+    interaction,
+    discordClient,
+    setupShop
+) {
+    if (!requireTeam(interaction)) {
+        return;
+    }
+
+    await interaction.deferReply({ flags: 64 });
+
+    const shopChannel = await fetchShopChannel(discordClient);
+
+    if (!shopChannel) {
+        await interaction.editReply(
+            '❌ Salon boutique introuvable.'
+        );
+
+        return;
+    }
+
+    await setupShop(shopChannel);
+
+    await interaction.editReply(
+        '✅ Boutique Oncle’Bich installée / mise à jour.'
+    );
+}
+
+// ============================================================
+// EXPORTS
+// ============================================================
 
 module.exports = {
     handleShopCommand,

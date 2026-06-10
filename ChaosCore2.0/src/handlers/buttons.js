@@ -1,24 +1,37 @@
+// ============================================================
+// IMPORTS — BOUTONS
+// ============================================================
+
 const { handleModerationButton } = require('./buttons/moderationButtons');
 const { handleRoleButton } = require('./buttons/roleButtons');
+
 const {
     handleOnboardingButton,
     handleOnboardingModal,
 } = require('./buttons/onboardingButtons');
+
 const { handleOverlayButton } = require('./buttons/overlayButtons');
+
 const {
     handleEmojiButton,
     handleEmojiModal,
     pendingEmojiRequests,
 } = require('./buttons/emojiButtons');
+
 const {
     handleShopButton,
     handleShopModal,
     handleShopSelectMenu,
 } = require('./buttons/shopButtons');
+
 const {
     handlePollButton,
     handlePollModal,
 } = require('./buttons/pollButtons');
+
+// ============================================================
+// HANDLER BOUTONS
+// ============================================================
 
 async function handleButton(interaction, discordClient, sendLog) {
     if (await handleRoleButton(interaction)) return;
@@ -30,6 +43,10 @@ async function handleButton(interaction, discordClient, sendLog) {
     if (await handlePollButton(interaction)) return;
 }
 
+// ============================================================
+// HANDLER MODALS
+// ============================================================
+
 async function handleModal(interaction, discordClient, sendLog) {
     if (await handleOnboardingModal(interaction)) return;
     if (await handleEmojiModal(interaction)) return;
@@ -37,9 +54,17 @@ async function handleModal(interaction, discordClient, sendLog) {
     if (await handlePollModal(interaction)) return;
 }
 
+// ============================================================
+// HANDLER SELECT MENUS
+// ============================================================
+
 async function handleSelectMenu(interaction) {
     if (await handleShopSelectMenu(interaction)) return;
 }
+
+// ============================================================
+// EXPORTS
+// ============================================================
 
 module.exports = {
     handleButton,

@@ -1,123 +1,157 @@
+// ============================================================
+// IMPORTS
+// ============================================================
+
 const axios = require('axios');
+
 const config = require('../../config');
 const db = require('../../db/queries');
 
+// ============================================================
+// CACHE TEMPORAIRE
+// ============================================================
+
 const pendingEmojiRequests = new Map();
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+function isValidEmojiName(name) {
+    return /^[a-z0-9_]{2,32}$/.test(name);
+}
+
+async function replyEphemeral(interaction, content) {
+    await interaction.reply({
+        content,
+        flags: 64,
+    });
+}
+
+// ============================================================
+// BOUTONS EMOJIS
+// ============================================================
 
 async function handleEmojiButton(interaction) {
     const { customId, guild } = interaction;
 
     if (customId.startsWith('approve_emoji_')) {
-        const requestId = customId.replace('approve_emoji_', '');
-        const request = await db.getEmojiRequest(requestId);
-
-        if (!request) {
-            await interaction.reply({
-                content: '❌ Demande d’emoji introuvable.',
-                flags: 64,
-            });
-            return true;
-        }
-
-        if (request.status !== 'pending') {
-            await interaction.reply({
-                content: '❌ Cette demande a déjà été traitée.',
-                flags: 64,
-            });
-            return true;
-        }
-
-        const userData = await db.getUserPoints(request.user_id);
-
-if (userData.balance < config.SHOP_PRICES.emoji) {
-    await db.updateEmojiRequestStatus(requestId, 'rejected');
-
-    await interaction.reply({
-        content: '❌ Solde insuffisant. Demande refusée automatiquement.',
-        flags: 64,
-    });
-
-    return true;
-}
-
-const newBalance = await db.addPoints(
-    request.user_id,
-    -config.SHOP_PRICES.emoji
-);
-
-        const imageResponse = await axios.get(request.image_url, {
-            responseType: 'arraybuffer',
-        });
-
-        const emoji = await guild.emojis.create({
-            attachment: Buffer.from(imageResponse.data),
-            name: request.emoji_name,
-            reason: `Emoji personnalisé acheté par ${request.user_id}`,
-        });
-
-        await db.updateEmojiRequestStatus(requestId, 'approved');
-
-        await interaction.message.edit({
-            components: [],
-        }).catch(() => null);
-
-        await interaction.reply({
-            content:
-                `✅ Emoji créé avec succès !\n\n` +
-                `👤 Membre : <@${request.user_id}>\n` +
-                `🎨 Emoji : ${emoji}\n` +
-                `💰 Débité : **${config.SHOP_PRICES.emoji} Bichcoins**`,
-            flags: 64,
-        });
-
+        await handleApproveEmoji(interaction, guild);
         return true;
     }
 
     if (customId.startsWith('reject_emoji_')) {
-        const requestId = customId.replace('reject_emoji_', '');
-        const request = await db.getEmojiRequest(requestId);
-
-        if (!request) {
-            await interaction.reply({
-                content: '❌ Demande d’emoji introuvable.',
-                flags: 64,
-            });
-            return true;
-        }
-
-        await db.updateEmojiRequestStatus(requestId, 'rejected');
-
-        await interaction.message.edit({
-            components: [],
-        }).catch(() => null);
-
-        await interaction.reply({
-            content: '❌ Demande d’emoji refusée.',
-            flags: 64,
-        });
-
+        await handleRejectEmoji(interaction);
         return true;
     }
 
     return false;
 }
 
+// ============================================================
+// VALIDATION EMOJI
+// ============================================================
+
+async function handleApproveEmoji(interaction, guild) {
+    const requestId = interaction.customId.replace('approve_emoji_', '');
+    const request = await db.getEmojiRequest(requestId);
+
+    if (!request) {
+        await replyEphemeral(interaction, '❌ Demande d’emoji introuvable.');
+        return;
+    }
+
+    if (request.status !== 'pending') {
+        await replyEphemeral(interaction, '❌ Cette demande a déjà été traitée.');
+        return;
+    }
+
+    const userData = await db.getUserPoints(request.user_id);
+
+    if (userData.balance < config.SHOP_PRICES.emoji) {
+        await db.updateEmojiRequestStatus(requestId, 'rejected');
+
+        await replyEphemeral(
+            interaction,
+            '❌ Solde insuffisant. Demande refusée automatiquement.'
+        );
+
+        return;
+    }
+
+    await db.addPoints(
+        request.user_id,
+        -config.SHOP_PRICES.emoji
+    );
+
+    const imageResponse = await axios.get(request.image_url, {
+        responseType: 'arraybuffer',
+    });
+
+    const emoji = await guild.emojis.create({
+        attachment: Buffer.from(imageResponse.data),
+        name: request.emoji_name,
+        reason: `Emoji personnalisé acheté par ${request.user_id}`,
+    });
+
+    await db.updateEmojiRequestStatus(requestId, 'approved');
+
+    await interaction.message.edit({
+        components: [],
+    }).catch(() => null);
+
+    await replyEphemeral(
+        interaction,
+        `✅ Emoji créé avec succès !\n\n` +
+        `👤 Membre : <@${request.user_id}>\n` +
+        `🎨 Emoji : ${emoji}\n` +
+        `💰 Débité : **${config.SHOP_PRICES.emoji} Bichcoins**`
+    );
+}
+
+// ============================================================
+// REFUS EMOJI
+// ============================================================
+
+async function handleRejectEmoji(interaction) {
+    const requestId = interaction.customId.replace('reject_emoji_', '');
+    const request = await db.getEmojiRequest(requestId);
+
+    if (!request) {
+        await replyEphemeral(interaction, '❌ Demande d’emoji introuvable.');
+        return;
+    }
+
+    await db.updateEmojiRequestStatus(requestId, 'rejected');
+
+    await interaction.message.edit({
+        components: [],
+    }).catch(() => null);
+
+    await replyEphemeral(interaction, '❌ Demande d’emoji refusée.');
+}
+
+// ============================================================
+// MODAL NOM EMOJI
+// ============================================================
+
 async function handleEmojiModal(interaction) {
     const { customId, user } = interaction;
 
-    if (customId !== 'emoji_name_modal') return false;
+    if (customId !== 'emoji_name_modal') {
+        return false;
+    }
 
     const emojiName = interaction.fields
         .getTextInputValue('emoji_name')
         .toLowerCase()
         .trim();
 
-    if (!/^[a-z0-9_]{2,32}$/.test(emojiName)) {
-        await interaction.reply({
-            content:
-                '❌ Nom d’emoji invalide. Utilise uniquement lettres minuscules, chiffres et underscores.',
-            flags: 64,
-        });
+    if (!isValidEmojiName(emojiName)) {
+        await replyEphemeral(
+            interaction,
+            '❌ Nom d’emoji invalide. Utilise uniquement lettres minuscules, chiffres et underscores.'
+        );
 
         return true;
     }
@@ -127,16 +161,19 @@ async function handleEmojiModal(interaction) {
         price: config.SHOP_PRICES.emoji,
     });
 
-    await interaction.reply({
-        content:
-            `🎨 Emoji demandé : **:${emojiName}:**\n\n` +
-            `Maintenant, envoie l’image de ton emoji dans ce salon.\n` +
-            `⚠️ La Team validera la demande avant création.`,
-        flags: 64,
-    });
+    await replyEphemeral(
+        interaction,
+        `🎨 Emoji demandé : **:${emojiName}:**\n\n` +
+        `Maintenant, envoie l’image de ton emoji dans ce salon.\n` +
+        `⚠️ La Team validera la demande avant création.`
+    );
 
     return true;
 }
+
+// ============================================================
+// EXPORTS
+// ============================================================
 
 module.exports = {
     handleEmojiButton,

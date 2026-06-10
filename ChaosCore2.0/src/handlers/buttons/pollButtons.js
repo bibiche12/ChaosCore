@@ -1,3 +1,7 @@
+// ============================================================
+// IMPORTS
+// ============================================================
+
 const {
     ModalBuilder,
     TextInputBuilder,
@@ -5,63 +9,126 @@ const {
     ActionRowBuilder,
 } = require('discord.js');
 
+const config = require('../../config');
 const db = require('../../db/queries');
 
-async function handlePollButton(interaction) {
-    const { customId, user } = interaction;
-   if (customId.startsWith('poll_close_')) {
-    await interaction.deferReply({ flags: 64 });
+const { buildPollEmbed } = require('../../services/polls/pollResults');
+const { closePollAndPublishResults } = require('../../services/polls/pollService');
 
-    const pollId = customId.replace('poll_close_', '');
+// ============================================================
+// HELPERS
+// ============================================================
+
+function hasModeratorPermission(member) {
+    const isModerator = member.roles.cache.has(config.MODERATOR_ROLE_ID);
+    const isTeam = member.roles.cache.some(
+        role => role.name === config.TEAM_ROLE_NAME
+    );
+
+    return isModerator || isTeam;
+}
+
+async function replyEphemeral(interaction, content) {
+    await interaction.reply({
+        content,
+        flags: 64,
+    });
+}
+
+async function editEphemeral(interaction, content) {
+    await interaction.editReply({
+        content,
+    });
+}
+
+async function updatePollMessage(interaction, pollId) {
     const poll = await db.getPoll(pollId);
 
-    if (!poll) {
-        await interaction.editReply({ content: '❌ Sondage introuvable.' });
-        return true;
+    if (!poll || poll.closed) {
+        return;
     }
 
-    if (poll.closed) {
-        await interaction.editReply({ content: '❌ Ce sondage est déjà clôturé.' });
-        return true;
-    }
-
-    await db.closePoll(pollId);
-
+    const options = await db.getPollOptions(pollId);
     const results = await db.getPollResults(pollId);
-    const totalVotes = results.reduce((sum, r) => sum + Number(r.votes), 0);
-
-    const resultText = results.map((r, i) => {
-        const percent = totalVotes > 0 ? Math.round((Number(r.votes) / totalVotes) * 100) : 0;
-        const medal = ['🥇', '🥈', '🥉'][i] || '▫️';
-        return `${medal} **${r.option_text}** — ${r.votes} vote(s) (${percent}%)`;
-    }).join('\n');
-
-    const resultChannel = await interaction.client.channels
-        .fetch(require('../../config').POLL_RESULTS_CHANNEL_ID)
-        .catch(() => null);
-
-    if (resultChannel) {
-        await resultChannel.send(
-            `📊 **RÉSULTATS DU SONDAGE**\n\n` +
-            `**${poll.title}**\n` +
-            `${poll.question}\n\n` +
-            `${resultText || 'Aucun vote.'}\n\n` +
-            `👥 Total votes : **${totalVotes}**`
-        );
-    }
 
     await interaction.message.edit({
-        components: [],
+        embeds: [buildPollEmbed(poll, options, results)],
     }).catch(() => null);
-
-    await interaction.editReply({
-        content: '🔒 Sondage clôturé et résultats envoyés.',
-    });
-
-    return true;
 }
-if (customId.startsWith('poll_free_')) {
-    const pollId = customId.replace('poll_free_', '');
+
+// ============================================================
+// HANDLER BOUTONS
+// ============================================================
+
+async function handlePollButton(interaction) {
+    const { customId } = interaction;
+
+    if (customId.startsWith('poll_close_')) {
+        await handlePollClose(interaction);
+        return true;
+    }
+
+    if (customId.startsWith('poll_free_')) {
+        await handlePollFreeAnswerButton(interaction);
+        return true;
+    }
+
+    if (customId.startsWith('poll_vote_')) {
+        await handlePollVote(interaction);
+        return true;
+    }
+
+    return false;
+}
+
+// ============================================================
+// CLÔTURE DU SONDAGE
+// ============================================================
+
+async function handlePollClose(interaction) {
+    await interaction.deferReply({ flags: 64 });
+
+    if (!hasModeratorPermission(interaction.member)) {
+        await editEphemeral(
+            interaction,
+            '❌ Seule la modération peut clôturer un sondage.'
+        );
+
+        return;
+    }
+
+    const pollId = interaction.customId.replace('poll_close_', '');
+
+    const closed = await closePollAndPublishResults(
+        interaction.client,
+        pollId,
+        interaction.user.tag
+    );
+
+    await editEphemeral(
+        interaction,
+        closed
+            ? '🔒 Sondage clôturé et résultats envoyés.'
+            : '❌ Sondage introuvable ou déjà clôturé.'
+    );
+}
+
+// ============================================================
+// BOUTON RÉPONSE LIBRE
+// ============================================================
+
+async function handlePollFreeAnswerButton(interaction) {
+    const pollId = interaction.customId.replace('poll_free_', '');
+    const poll = await db.getPoll(pollId);
+
+    if (!poll || poll.closed) {
+        await replyEphemeral(
+            interaction,
+            '❌ Ce sondage est terminé ou introuvable.'
+        );
+
+        return;
+    }
 
     const modal = new ModalBuilder()
         .setCustomId(`poll_free_modal_${pollId}`)
@@ -79,60 +146,100 @@ if (customId.startsWith('poll_free_')) {
     );
 
     await interaction.showModal(modal);
-    return true;
 }
 
-    if (!customId.startsWith('poll_vote_')) {
-        return false;
-    }
+// ============================================================
+// BOUTON VOTE
+// ============================================================
 
+async function handlePollVote(interaction) {
     await interaction.deferReply({ flags: 64 });
 
-    const parts = customId.split('_');
-    const pollId = parts[2];
-    const optionId = parts[3];
-
+    const { pollId, optionId } = parseVoteCustomId(interaction.customId);
     const poll = await db.getPoll(pollId);
 
     if (!poll || poll.closed) {
-        await interaction.editReply({
-            content: '❌ Ce sondage est terminé ou introuvable.',
-        });
-        return true;
+        await editEphemeral(
+            interaction,
+            '❌ Ce sondage est terminé ou introuvable.'
+        );
+
+        return;
+    }
+
+    const alreadyVoted = await db.hasUserVotedOption(
+        pollId,
+        interaction.user.id,
+        optionId
+    );
+
+    if (alreadyVoted) {
+        await db.removePollVote(
+            pollId,
+            interaction.user.id,
+            optionId
+        );
+
+        await updatePollMessage(interaction, pollId);
+
+        await editEphemeral(
+            interaction,
+            '↩️ Ton vote a été retiré.'
+        );
+
+        return;
     }
 
     if (!poll.allow_multiple) {
-        await db.clearUserPollVotes(pollId, user.id);
+        await db.clearUserPollVotes(
+            pollId,
+            interaction.user.id
+        );
     }
 
-    const alreadyVoted = await db.hasUserVotedOption(pollId, user.id, optionId);
+    await db.addPollVote(
+        pollId,
+        interaction.user.id,
+        optionId
+    );
 
-    if (alreadyVoted) {
-        await db.removePollVote(pollId, user.id, optionId);
+    await updatePollMessage(interaction, pollId);
 
-        await interaction.editReply({
-            content: '↩️ Ton vote a été retiré.',
-        });
-
-        return true;
-    }
-
-    await db.addPollVote(pollId, user.id, optionId);
-
-    await interaction.editReply({
-        content: poll.allow_multiple
+    await editEphemeral(
+        interaction,
+        poll.allow_multiple
             ? '✅ Vote ajouté.'
-            : '✅ Vote enregistré. Ton ancien vote a été remplacé.',
-    });
-
-    return true;
+            : '✅ Vote enregistré. Ton ancien vote a été remplacé.'
+    );
 }
+
+function parseVoteCustomId(customId) {
+    const parts = customId.split('_');
+
+    return {
+        pollId: parts[2],
+        optionId: parts[3],
+    };
+}
+
+// ============================================================
+// HANDLER MODAL
+// ============================================================
 
 async function handlePollModal(interaction) {
     if (!interaction.customId.startsWith('poll_free_modal_')) {
         return false;
     }
 
+    await handlePollFreeAnswerModal(interaction);
+    return true;
+}
+
+// ============================================================
+// MODAL RÉPONSE LIBRE
+// ============================================================
+
+async function handlePollFreeAnswerModal(interaction) {
     await interaction.deferReply({ flags: 64 });
 
     const pollId = interaction.customId.replace('poll_free_modal_', '');
@@ -141,20 +248,29 @@ async function handlePollModal(interaction) {
     const poll = await db.getPoll(pollId);
 
     if (!poll || poll.closed) {
-        await interaction.editReply({
-            content: '❌ Ce sondage est terminé ou introuvable.',
-        });
-        return true;
+        await editEphemeral(
+            interaction,
+            '❌ Ce sondage est terminé ou introuvable.'
+        );
+
+        return;
     }
 
-    await db.addPollFreeAnswer(pollId, interaction.user.id, answer);
+    await db.addPollFreeAnswer(
+        pollId,
+        interaction.user.id,
+        answer
+    );
 
-    await interaction.editReply({
-        content: '✅ Ta réponse libre a été enregistrée.',
-    });
-
-    return true;
+    await editEphemeral(
+        interaction,
+        '✅ Ta réponse libre a été enregistrée.'
+    );
 }
+
+// ============================================================
+// EXPORTS
+// ============================================================
 
 module.exports = {
     handlePollButton,

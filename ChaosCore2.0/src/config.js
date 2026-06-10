@@ -3,22 +3,40 @@
 // ============================================================
 
 module.exports = {
-    // --- Économie ---
+
+    // ============================================================
+    // ÉCONOMIE
+    // ============================================================
+
     MONEY_NAME: 'Bichcoin',
     POINTS_PER_MESSAGE: 1,
     MESSAGE_COOLDOWN_MS: 60 * 1000,
     MONTHLY_BONUS: 250,
 
-    // --- Boutique ---
+    // ============================================================
+    // BOUTIQUE
+    // ============================================================
+
     SHOP_CHANNEL_ID: '1510994478394245162',
+
     SHOP_PRICES: {
         emoji: 100,
         gage: 200,
-        phrase: { 1: 300, 2: 550 },
-        role: { 7: 50, 14: 75, 30: 150 },
+        phrase: {
+            1: 300,
+            2: 550,
+        },
+        role: {
+            7: 50,
+            14: 75,
+            30: 150,
+        },
     },
 
-    // --- Canaux ---
+    // ============================================================
+    // CANAUX
+    // ============================================================
+
     DISBOARD_CHANNEL_ID: '1505837489934438440',
     LIVE_CHANNEL_ID: '1503697483975626762',
     LOG_CHANNEL_ID: '1510994452972310708',
@@ -27,14 +45,24 @@ module.exports = {
     WELCOME_CHANNEL_ID: '1503695133261041684',
     GOODBYE_CHANNEL_ID: '1513129181989437460',
 
-    // --- Onboarding / Sécurité ---
+    // ============================================================
+    // ONBOARDING / SÉCURITÉ
+    // ============================================================
+
     ONBOARDING_RECAP_CHANNEL_ID: '1513128609529991169',
     ONBOARDING_LOG_CHANNEL_ID: '1513128609529991169',
     SECURITY_LOG_CHANNEL_ID: '1513128609529991169',
 
-    // --- Sondages ---
-POLL_RESULTS_CHANNEL_ID: '1513128609529991169',
-POLL_SEND_CHANNEL_ID: '1503987769364713587',
+    // ============================================================
+    // SONDAGES
+    // ============================================================
+
+    POLL_RESULTS_CHANNEL_ID: '1513128609529991169',
+    POLL_SEND_CHANNEL_ID: '1503987769364713587',
+
+    // ============================================================
+    // SALONS AUTORISÉS POUR LES BICHCOINS
+    // ============================================================
 
     ALLOWED_MONEY_CHANNELS: [
         '1503703021832507452',
@@ -42,19 +70,30 @@ POLL_SEND_CHANNEL_ID: '1503987769364713587',
         '1509302039161737299',
     ],
 
-    // --- Modération Warning ---
-MODERATOR_ROLE_ID: '1503661073734176950',
-WARNING_ROLE_ID: '1514178309271851070',
-WARNING_EXPLANATION_CHANNEL_ID: '1514178160298823790',
-MODERATION_CHANNEL_ID: '1514177849282793473',
-MOD_LOG_CHANNEL_ID: '1514181710596538488',
-WARNING_LIMIT: 3,
-WARNING_WINDOW_MS: 24 * 60 * 60 * 1000,
+    // ============================================================
+    // MODÉRATION / WARNINGS
+    // ============================================================
 
-    // --- Rôles ---
+    MODERATOR_ROLE_ID: '1503661073734176950',
+    WARNING_ROLE_ID: '1514178309271851070',
+    WARNING_EXPLANATION_CHANNEL_ID: '1514178160298823790',
+    MODERATION_CHANNEL_ID: '1514177849282793473',
+    MOD_LOG_CHANNEL_ID: '1514181710596538488',
+
+    WARNING_LIMIT: 3,
+    WARNING_WINDOW_MS: 24 * 60 * 60 * 1000,
+
+    // ============================================================
+    // RÔLES PRINCIPAUX
+    // ============================================================
+
     TEAM_ROLE_NAME: '👑 Team',
     LIVE_ROLE_ID: '1503662500632068106',
     CHAOS_CHILD_ROLE_ID: '1508899875310538873',
+
+    // ============================================================
+    // RÔLES ONBOARDING
+    // ============================================================
 
     ROLE_ETAPE_1_ID: '1513130658266873978',
     ROLE_ETAPE_2_ID: '1513130935242195064',
@@ -62,50 +101,87 @@ WARNING_WINDOW_MS: 24 * 60 * 60 * 1000,
     ROLE_BIBICHE_ID: '1513136293943705691',
     ROLE_MINEUR_ID: '1503663257909596181',
     ROLE_MAJEUR_ID: '1503663390483157002',
+
+    // ============================================================
+    // RÔLES PINGS
+    // ============================================================
+
     ROLE_PING_LIVE_ID: '1503662500632068106',
     ROLE_PING_GAME_ID: '1503662743688052807',
     ROLE_PING_PROGRAMME_ID: '1503662897853759598',
+
+    // ============================================================
+    // RÔLES JEUX
+    // ============================================================
+
     ROLE_GAME_HORREUR_ID: '1503663454270128210',
     ROLE_GAME_RPG_ID: '1503663588127277077',
     ROLE_GAME_TIR_ID: '1503663623887913080',
     ROLE_GAME_SPORT_ID: '1503663799582986240',
+
+    // ============================================================
+    // RÔLES PLATEFORMES
+    // ============================================================
+
     ROLE_XBOX_ID: '1503663837574856744',
     ROLE_PS5_ID: '1503664050104696923',
     ROLE_PC_ID: '1503664081515581440',
     ROLE_SWITCH_ID: '1503664121332240435',
 
-    // --- Onboarding ---
+    // ============================================================
+    // ONBOARDING
+    // ============================================================
+
     REGLEMENT_MESSAGE_ID: '1511147167358779494',
     REGLEMENT_EMOJI_NAME: '😈',
     SALON_ROLES_ID: '1503678177606893669',
 
-    // --- Twitch ---
-TWITCH_USERNAME: 'BlackAlpha39',
-TWITCH_MESSAGE_COOLDOWN_MS: 5000,
-TWITCH_AUTO_SCAN_ENABLED: true,
-TWITCH_AUTO_SCAN_START: '20:45',
-TWITCH_AUTO_SCAN_END: '23:59',
-TWITCH_AUTO_SCAN_INTERVAL_MS: 2 * 60 * 1000,
-TWITCH_LIVE_END_SCAN_INTERVAL_MS: 2 * 60 * 1000,
+    // ============================================================
+    // TWITCH
+    // ============================================================
 
-    // --- Tickets du Chaos ---
+    TWITCH_USERNAME: 'BlackAlpha39',
+    TWITCH_MESSAGE_COOLDOWN_MS: 5000,
+
+    TWITCH_AUTO_SCAN_ENABLED: true,
+    TWITCH_AUTO_SCAN_START: '20:45',
+    TWITCH_AUTO_SCAN_END: '23:59',
+    TWITCH_AUTO_SCAN_INTERVAL_MS: 2 * 60 * 1000,
+    TWITCH_LIVE_END_SCAN_INTERVAL_MS: 2 * 60 * 1000,
+
+    // ============================================================
+    // TICKETS DU CHAOS
+    // ============================================================
+
     TICKET_PRESENCE: 2,
     TICKET_EVERY_10_MESSAGES: 2,
 
-    // --- Disboard ---
+    // ============================================================
+    // DISBOARD
+    // ============================================================
+
     DISBOARD_INTERVAL_MS: 2 * 60 * 60 * 1000,
 
-    // --- Sécurité ---
+    // ============================================================
+    // SÉCURITÉ / ANTI-SPAM / ANTI-RAID
+    // ============================================================
+
     ANTI_SPAM_MESSAGE_LIMIT: 10,
     ANTI_SPAM_MESSAGE_WINDOW_MS: 10 * 1000,
+
     ANTI_SPAM_LINK_LIMIT: 3,
     ANTI_SPAM_FILE_LIMIT: 3,
     ANTI_SPAM_MEDIA_WINDOW_MS: 30 * 1000,
+
     ANTI_SPAM_TIMEOUT_MS: 10 * 60 * 1000,
+
     ANTI_RAID_THRESHOLD: 5,
     ANTI_RAID_WINDOW_MS: 2 * 60 * 1000,
 
-    // --- Couleurs rôles ---
+    // ============================================================
+    // COULEURS RÔLES
+    // ============================================================
+
     ROLE_COLORS: {
         red: '#FF0000',
         orange: '#FF8000',
@@ -130,6 +206,5 @@ TWITCH_LIVE_END_SCAN_INTERVAL_MS: 2 * 60 * 1000,
         black: 'Noir',
         white: 'Blanc',
         brown: 'Marron',
-
     },
 };

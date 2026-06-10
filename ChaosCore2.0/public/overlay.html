@@ -3,7 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <title>ChaosCore Overlay</title>
+
     <style>
+        /* ============================================================
+           BASE
+        ============================================================ */
+
         body {
             margin: 0;
             overflow: hidden;
@@ -11,29 +16,43 @@
             font-family: Arial, sans-serif;
         }
 
+        /* ============================================================
+           BANDEAU OVERLAY
+        ============================================================ */
+
         #ticker {
             position: fixed;
             bottom: 0;
             left: 0;
+
             width: 100%;
             height: 46px;
-            background: rgba(0, 0, 0, 0.92);
-            border-top: 3px solid #9b5cff;
-            overflow: hidden;
+
             display: none;
             align-items: center;
+
+            overflow: hidden;
+
+            background: rgba(0, 0, 0, 0.92);
+            border-top: 3px solid #9b5cff;
         }
 
         #ticker.visible {
             display: flex;
         }
 
+        /* ============================================================
+           TEXTE DÉFILANT
+        ============================================================ */
+
         #track {
+            padding-left: 100%;
+
             white-space: nowrap;
             color: white;
             font-size: 24px;
             font-weight: bold;
-            padding-left: 100%;
+
             animation: scrollText 35s linear infinite;
         }
 
@@ -41,37 +60,56 @@
             from {
                 transform: translateX(0);
             }
+
             to {
                 transform: translateX(-100%);
             }
         }
     </style>
 </head>
+
 <body>
+    <!-- ============================================================
+         BANDEAU
+    ============================================================ -->
+
     <div id="ticker">
         <div id="track"></div>
     </div>
 
     <script>
+        // ============================================================
+        // ÉLÉMENTS DOM
+        // ============================================================
+
         const ticker = document.getElementById('ticker');
         const track = document.getElementById('track');
+
+        // ============================================================
+        // FORMATAGE
+        // ============================================================
 
         function formatItem(item) {
             const title = item.rewardName || 'Chaos';
             const text = item.userInput || '';
-            return `${title} ${text}`;
+
+            return `${title} ${text}`.trim();
         }
+
+        // ============================================================
+        // RAFRAÎCHISSEMENT OVERLAY
+        // ============================================================
 
         async function refreshOverlay() {
             try {
-                const response = await fetch('/overlay/latest?t=' + Date.now(), {
-    cache: 'no-store'
-});
+                const response = await fetch(`/overlay/latest?t=${Date.now()}`, {
+                    cache: 'no-store',
+                });
+
                 const data = await response.json();
 
                 if (!data.active || !data.items || data.items.length === 0) {
-                    ticker.classList.remove('visible');
-                    track.innerText = '';
+                    hideOverlay();
                     return;
                 }
 
@@ -79,14 +117,21 @@
                     .map(formatItem)
                     .join('   -   ');
 
-                track.innerText = message + '   -   ' + message;
-
+                track.innerText = `${message}   -   ${message}`;
                 ticker.classList.add('visible');
             } catch (error) {
-                ticker.classList.remove('visible');
-                track.innerText = '';
+                hideOverlay();
             }
         }
+
+        function hideOverlay() {
+            ticker.classList.remove('visible');
+            track.innerText = '';
+        }
+
+        // ============================================================
+        // LANCEMENT
+        // ============================================================
 
         refreshOverlay();
         setInterval(refreshOverlay, 3000);

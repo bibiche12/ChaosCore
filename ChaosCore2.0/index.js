@@ -11,6 +11,7 @@ const { setupShop, processLivePhrases } = require('./src/services/shop');
 const { handleCommand, commandDefinitions } = require('./src/handlers/commands');
 const { handleButton, handleModal, handleSelectMenu, pendingEmojiRequests } = require('./src/handlers/buttons');
 const { handleMessage, restoreDisboardReminder } = require('./src/handlers/messages');
+const { closeExpiredPolls } = require('./src/services/polls/pollService');
 
 const client = new Client({
     intents: [
