@@ -27,34 +27,37 @@ async function handleOverlayButton(interaction) {
         });
 
         await interaction.reply({
-            content: '✅ Gage marqué comme effectué. Il disparaîtra de la bannière.',
+            content: '✅ Gage marqué comme effectué.\nIl disparaîtra de la bannière.',
             flags: 64,
         });
 
         return true;
     }
 
-   if (customId.startsWith('complete_shop_gage_')) {
-    const eventId = customId.replace('complete_shop_gage_', '');
+    if (customId.startsWith('complete_shop_gage_')) {
+        const eventId = customId.replace('complete_shop_gage_', '');
 
-    const event = await db.getShopRequest(eventId);
+        const event = await db.getShopRequest(eventId);
 
-    if (!event) {
-        await interaction.reply({
-            content: '❌ Gage boutique introuvable.',
-            flags: 64,
-        });
-        return true;
-    }
+        if (!event) {
+            await interaction.reply({
+                content: '❌ Gage boutique introuvable.',
+                flags: 64,
+            });
+            return true;
+        }
+
+        await db.completeShopRequest(eventId);
+
         await interaction.message.edit({
             content:
                 interaction.message.content +
-                `\n\n✅ Gage effectué par ${user}`,
+                `\n\n✅ Gage boutique effectué par ${user}`,
             components: [],
         }).catch(() => null);
 
         await interaction.reply({
-            content: '✅ Gage marqué comme effectué. Il disparaîtra de la bannière.',
+            content: '✅ Gage boutique marqué comme effectué.\nIl disparaîtra de la bannière.',
             flags: 64,
         });
 
@@ -64,6 +67,4 @@ async function handleOverlayButton(interaction) {
     return false;
 }
 
-module.exports = {
-    handleOverlayButton,
-};
+module.exports = { handleOverlayButton };
