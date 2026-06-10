@@ -2,6 +2,19 @@ const { SlashCommandBuilder } = require('discord.js');
 
 const commandDefinitions = [
     new SlashCommandBuilder()
+    .setName('warning')
+    .setDescription('Envoyer un avertissement modération à un membre')
+    .addUserOption(o =>
+        o.setName('membre')
+            .setDescription('Membre à avertir')
+            .setRequired(true)
+    )
+    .addStringOption(o =>
+        o.setName('raison')
+            .setDescription('Raison du warning')
+            .setRequired(false)
+    ),
+    new SlashCommandBuilder()
         .setName('ping')
         .setDescription('Vérifie que ChaosCore fonctionne'),
 

@@ -1,3 +1,4 @@
+const { handleModerationButton } = require('./buttons/moderationButtons');
 const { handleRoleButton } = require('./buttons/roleButtons');
 const {
     handleOnboardingButton,
@@ -20,6 +21,7 @@ async function handleButton(interaction, discordClient, sendLog) {
     if (await handleOnboardingButton(interaction)) return;
     if (await handleOverlayButton(interaction)) return;
     if (await handleEmojiButton(interaction)) return;
+    if (await handleModerationButton(interaction)) return;
     if (await handleShopButton(interaction, discordClient, sendLog)) return;
 }
 

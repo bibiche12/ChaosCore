@@ -3,7 +3,6 @@ require('dotenv').config();
 const path = require('path');
 const { Client, GatewayIntentBits, Partials, REST, Routes } = require('discord.js');
 const express = require('express');
-
 const security = require('./src/services/security');
 const config = require('./src/config');
 const db = require('./src/db/queries');
@@ -12,6 +11,7 @@ const { setupShop, processLivePhrases } = require('./src/services/shop');
 const { handleCommand, commandDefinitions } = require('./src/handlers/commands');
 const { handleButton, handleModal, handleSelectMenu, pendingEmojiRequests } = require('./src/handlers/buttons');
 const { handleMessage, restoreDisboardReminder } = require('./src/handlers/messages');
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -30,6 +30,10 @@ const recentJoins = [];
 
 async function sendOnboardingLog(message) {
     const channel = await client.channels.fetch(config.ONBOARDING_LOG_CHANNEL_ID).catch(() => null);
+    if (channel) await channel.send(message).catch(console.error);
+}
+async function sendModLog(message) {
+    const channel = await client.channels.fetch(config.MOD_LOG_CHANNEL_ID).catch(() => null);
     if (channel) await channel.send(message).catch(console.error);
 }
 
@@ -173,6 +177,37 @@ client.once('clientReady', async () => {
     }, 60 * 60 * 1000);
 
     handleMonthlyBonus().catch(console.error);
+});
+client.on('messageDelete', async (message) => {
+    try {
+        if (!message.guild || message.author?.bot) return;
+
+        await sendModLog(
+            `🗑️ **Message supprimé**\n\n` +
+            `👤 Auteur : ${message.author || 'Inconnu'}\n` +
+            `📍 Salon : ${message.channel}\n` +
+            `📝 Contenu :\n${message.content || '*Contenu indisponible*'}`
+        );
+    } catch (error) {
+        console.error('❌ Erreur log messageDelete:', error);
+    }
+});
+
+client.on('messageUpdate', async (oldMessage, newMessage) => {
+    try {
+        if (!oldMessage.guild || oldMessage.author?.bot) return;
+        if (oldMessage.content === newMessage.content) return;
+
+        await sendModLog(
+            `✏️ **Message modifié**\n\n` +
+            `👤 Auteur : ${oldMessage.author}\n` +
+            `📍 Salon : ${oldMessage.channel}\n\n` +
+            `**Avant :**\n${oldMessage.content || '*Indisponible*'}\n\n` +
+            `**Après :**\n${newMessage.content || '*Indisponible*'}`
+        );
+    } catch (error) {
+        console.error('❌ Erreur log messageUpdate:', error);
+    }
 });
 
 client.on('interactionCreate', async (interaction) => {
