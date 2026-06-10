@@ -26,6 +26,8 @@ function requireTeam(interaction) {
             flags: 64,
         });
 
+        
+
         return false;
     }
 
@@ -139,6 +141,29 @@ await member.roles.add(config.WARNING_ROLE_ID).catch(() => null);
             });
         }
     }
+
+    return true;
+}
+if (interaction.commandName === 'clear') {
+    if (!requireModerator(interaction)) return true;
+
+    await interaction.deferReply({ flags: 64 });
+
+    const amount = interaction.options.getInteger('nombre');
+
+    const deleted = await interaction.channel.bulkDelete(amount, true)
+        .catch(() => null);
+
+    if (!deleted) {
+        await interaction.editReply({
+            content: '❌ Impossible de supprimer les messages. Vérifie mes permissions.',
+        });
+        return true;
+    }
+
+    await interaction.editReply({
+        content: `🧹 ${deleted.size} message(s) supprimé(s).`,
+    });
 
     return true;
 }

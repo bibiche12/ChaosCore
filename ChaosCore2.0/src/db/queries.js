@@ -125,6 +125,52 @@ await pool.query(`
         guild_id TEXT PRIMARY KEY,
         channel_id TEXT NOT NULL,
         next_bump_at BIGINT NOT NULL
+    ); 
+`);
+await pool.query(`
+    CREATE TABLE IF NOT EXISTS polls (
+        id SERIAL PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        message_id TEXT,
+        creator_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        question TEXT NOT NULL,
+        color TEXT DEFAULT 'purple',
+        allow_multiple BOOLEAN DEFAULT false,
+        allow_free_answer BOOLEAN DEFAULT false,
+        duration_type TEXT NOT NULL,
+        ends_at TIMESTAMP NOT NULL,
+        closed BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+`);
+
+await pool.query(`
+    CREATE TABLE IF NOT EXISTS poll_options (
+        id SERIAL PRIMARY KEY,
+        poll_id INTEGER NOT NULL,
+        option_text TEXT NOT NULL
+    );
+`);
+
+await pool.query(`
+    CREATE TABLE IF NOT EXISTS poll_votes (
+        id SERIAL PRIMARY KEY,
+        poll_id INTEGER NOT NULL,
+        user_id TEXT NOT NULL,
+        option_id INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+`);
+
+await pool.query(`
+    CREATE TABLE IF NOT EXISTS poll_free_answers (
+        id SERIAL PRIMARY KEY,
+        poll_id INTEGER NOT NULL,
+        user_id TEXT NOT NULL,
+        answer TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 `);
 
@@ -606,20 +652,180 @@ async function resolveWarnings(guildId, userId) {
          AND resolved = false`,
         [guildId, userId]
     );
+ }   
+  async function createPoll(data) {
+    const result = await pool.query(
+        `INSERT INTO polls (
+            guild_id,
+            channel_id,
+            creator_id,
+            title,
+            question,
+            color,
+            allow_multiple,
+            allow_free_answer,
+            duration_type,
+            ends_at
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        RETURNING *`,
+        [
+            data.guildId,
+            data.channelId,
+            data.creatorId,
+            data.title,
+            data.question,
+            data.color,
+            data.allowMultiple,
+            data.allowFreeAnswer,
+            data.durationType,
+            data.endsAt,
+        ]
+    );
+
+    return result.rows[0];
+}
+
+async function addPollOption(pollId, optionText) {
+    await pool.query(
+        `INSERT INTO poll_options (poll_id, option_text)
+         VALUES ($1, $2)`,
+        [pollId, optionText]
+    );
+}
+
+async function getPollOptions(pollId) {
+    const result = await pool.query(
+        `SELECT * FROM poll_options
+         WHERE poll_id = $1
+         ORDER BY id`,
+        [pollId]
+    );
+
+    return result.rows;
+}
+
+async function setPollMessageId(pollId, messageId) {
+    await pool.query(
+        `UPDATE polls
+         SET message_id = $2
+         WHERE id = $1`,
+        [pollId, messageId]
+    );
+}
+async function addPollFreeAnswer(pollId, userId, answer) {
+    await pool.query(
+        `INSERT INTO poll_free_answers (poll_id, user_id, answer)
+         VALUES ($1, $2, $3)`,
+        [pollId, userId, answer]
+    );
+}
+async function getPoll(pollId) {
+    const result = await pool.query(
+        `SELECT * FROM polls WHERE id = $1`,
+        [pollId]
+    );
+
+    return result.rows[0] || null;
+}
+
+async function addPollVote(pollId, userId, optionId) {
+    await pool.query(
+        `INSERT INTO poll_votes (poll_id, user_id, option_id)
+         VALUES ($1, $2, $3)`,
+        [pollId, userId, optionId]
+    );
+}
+
+async function hasUserVotedOption(pollId, userId, optionId) {
+    const result = await pool.query(
+        `SELECT id FROM poll_votes
+         WHERE poll_id = $1
+         AND user_id = $2
+         AND option_id = $3`,
+        [pollId, userId, optionId]
+    );
+
+    return result.rows.length > 0;
+}
+
+async function removePollVote(pollId, userId, optionId) {
+    await pool.query(
+        `DELETE FROM poll_votes
+         WHERE poll_id = $1
+         AND user_id = $2
+         AND option_id = $3`,
+        [pollId, userId, optionId]
+    );
+}
+
+async function clearUserPollVotes(pollId, userId) {
+    await pool.query(
+        `DELETE FROM poll_votes
+         WHERE poll_id = $1
+         AND user_id = $2`,
+        [pollId, userId]
+    );
+}
+async function closePoll(pollId) {
+    await pool.query(
+        `UPDATE polls
+         SET closed = true
+         WHERE id = $1`,
+        [pollId]
+    );
+}
+async function closePoll(pollId) {
+    await pool.query(
+        `UPDATE polls
+         SET closed = true
+         WHERE id = $1`,
+        [pollId]
+    );
+}
+
+async function getPollResults(pollId) {
+    const result = await pool.query(
+        `SELECT
+            po.id,
+            po.option_text,
+            COUNT(pv.id)::int AS votes
+         FROM poll_options po
+         LEFT JOIN poll_votes pv ON pv.option_id = po.id
+         WHERE po.poll_id = $1
+         GROUP BY po.id, po.option_text
+         ORDER BY votes DESC, po.id ASC`,
+        [pollId]
+    );
+
+    return result.rows;
+    async function addPollFreeAnswer(pollId, userId, answer) {
+    await pool.query(
+        `INSERT INTO poll_free_answers (poll_id, user_id, answer)
+         VALUES ($1, $2, $3)`,
+        [pollId, userId, answer]
+    );
+}
 }
 module.exports = {
-    addModerationWarning,
-countRecentWarnings,
-resolveWarnings,
-    hasMonthlyBonusBeenGiven,
-markMonthlyBonusGiven,
     pool,
     initDatabase,
 
+    // Modération
+    addModerationWarning,
+    countRecentWarnings,
+    resolveWarnings,
+
+    // Bonus mensuel
+    hasMonthlyBonusBeenGiven,
+    markMonthlyBonusGiven,
+
+    // Économie
     getUserPoints,
     addPoints,
     giveMonthlyBonus,
 
+    // Tickets
     getTicketUser,
     addTickets,
     addPresenceTicket,
@@ -627,15 +833,18 @@ markMonthlyBonusGiven,
     addTwitchMessageTickets,
     getTopTickets,
 
+    // Twitch
     setTwitchLink,
     getDiscordIdFromTwitch,
     listTwitchLinks,
 
+    // Overlay
     insertChannelPointEvent,
     completeChannelPointEvent,
     clearOverlayEvents,
     getLatestOverlayEvents,
 
+    // Boutique
     insertShopRequest,
     getShopRequest,
     updateShopRequestStatus,
@@ -644,14 +853,31 @@ markMonthlyBonusGiven,
     completeShopRequest,
     decrementLivePhrases,
 
+    // Emojis
     insertEmojiRequest,
     getEmojiRequest,
     updateEmojiRequestStatus,
 
+    // Rôles temporaires
     insertTemporaryRole,
     getExpiredTemporaryRoles,
     deleteTemporaryRole,
 
+    // Sondages
+    createPoll,
+    addPollOption,
+    getPollOptions,
+    setPollMessageId,
+    getPoll,
+    addPollVote,
+    hasUserVotedOption,
+    removePollVote,
+    clearUserPollVotes,
+    closePoll,
+    getPollResults,
+    addPollFreeAnswer,
+
+    // Bump
     saveNextBump,
-getNextBump,
+    getNextBump,
 };

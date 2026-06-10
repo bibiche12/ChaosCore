@@ -145,6 +145,94 @@ const commandDefinitions = [
                 .setDescription('Texte à afficher')
                 .setRequired(true)
         ),
+       new SlashCommandBuilder()
+    .setName('sondage')
+    .setDescription('Créer un sondage interactif')
+    .addStringOption(o =>
+        o.setName('titre')
+            .setDescription('Titre du sondage')
+            .setRequired(true)
+    )
+    .addStringOption(o =>
+        o.setName('question')
+            .setDescription('Question du sondage')
+            .setRequired(true)
+    )
+    .addStringOption(o =>
+        o.setName('choix1')
+            .setDescription('Choix 1')
+            .setRequired(true)
+    )
+    .addStringOption(o =>
+        o.setName('choix2')
+            .setDescription('Choix 2')
+            .setRequired(true)
+    )
+    .addStringOption(o =>
+        o.setName('duree')
+            .setDescription('Durée du sondage')
+            .setRequired(true)
+            .addChoices(
+                { name: '🕐 1 heure', value: '1h' },
+                { name: '📅 1 jour', value: '1j' },
+                { name: '🗓️ 1 semaine', value: '1semaine' }
+            )
+    )
+    .addStringOption(o =>
+        o.setName('couleur')
+            .setDescription('Couleur du sondage')
+            .setRequired(true)
+            .addChoices(
+                { name: '🔴 Rouge', value: 'rouge' },
+                { name: '🟠 Orange', value: 'orange' },
+                { name: '🟡 Jaune', value: 'jaune' },
+                { name: '🟢 Vert', value: 'vert' },
+                { name: '🔵 Bleu', value: 'bleu' },
+                { name: '🟣 Violet', value: 'violet' },
+                { name: '🌸 Rose', value: 'rose' },
+                { name: '⚫ Noir', value: 'noir' }
+            )
+    )
+    .addBooleanOption(o =>
+        o.setName('multiple')
+            .setDescription('Autoriser plusieurs réponses ?')
+            .setRequired(true)
+    )
+    .addBooleanOption(o =>
+        o.setName('reponse_libre')
+            .setDescription('Autoriser une réponse libre ?')
+            .setRequired(true)
+    )
+    .addStringOption(o =>
+        o.setName('choix3')
+            .setDescription('Choix 3')
+            .setRequired(false)
+    )
+    .addStringOption(o =>
+        o.setName('choix4')
+            .setDescription('Choix 4')
+            .setRequired(false)
+    )
+    .addStringOption(o =>
+        o.setName('choix5')
+            .setDescription('Choix 5')
+            .setRequired(false)
+    )
+    .addStringOption(o =>
+        o.setName('choix6')
+            .setDescription('Choix 6')
+            .setRequired(false)
+    ),
+        new SlashCommandBuilder()
+    .setName('clear')
+    .setDescription('Supprimer un nombre de messages dans le salon')
+    .addIntegerOption(o =>
+        o.setName('nombre')
+            .setDescription('Nombre de messages à supprimer')
+            .setRequired(true)
+            .setMinValue(1)
+            .setMaxValue(100)
+    ),
 ].map(c => c.toJSON());
 
 module.exports = {
