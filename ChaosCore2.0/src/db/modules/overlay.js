@@ -76,22 +76,25 @@ module.exports = (pool) => {
         );
 
         const shopEvents = await pool.query(
-            `SELECT
-                id,
-                type AS source,
-                CASE
-                    WHEN type = 'gage' THEN '😈 Gage boutique'
-                    WHEN type = 'phrase' THEN '📢 Phrase live'
-                    ELSE type
-                END AS title,
-                content AS text,
-                user_id AS author,
-                created_at
-             FROM shop_requests
-             WHERE status = 'approved'
-             AND completed = false
-             AND type IN ('gage', 'phrase')`
-        );
+    `SELECT
+        id,
+        type AS source,
+        CASE
+            WHEN type = 'gage' THEN '😈 Gage boutique'
+            WHEN type = 'phrase' THEN '📢 Phrase live'
+            ELSE type
+        END AS title,
+        CASE
+            WHEN type = 'phrase' THEN content::json->>'text'
+            ELSE content
+        END AS text,
+        user_id AS author,
+        created_at
+     FROM shop_requests
+     WHERE status = 'approved'
+     AND completed = false
+     AND type IN ('gage', 'phrase')`
+);
 
         const allEvents = [
             ...twitchEvents.rows,

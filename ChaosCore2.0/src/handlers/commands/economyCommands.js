@@ -18,7 +18,7 @@ function hasTeamRole(member) {
 function requireTeam(interaction) {
     if (!hasTeamRole(interaction.member)) {
         interaction.reply({
-            content: '❌ Tu n’as pas l’autorisation d’utiliser cette commande.',
+            content: "❌ Tu n'as pas l'autorisation d'utiliser cette commande.",
             flags: 64,
         });
 

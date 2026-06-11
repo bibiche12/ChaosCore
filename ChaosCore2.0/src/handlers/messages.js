@@ -201,7 +201,7 @@ async function sendEmojiRequestLog(
 
     await logChannel.send({
         content:
-            `🎨 **Nouvelle demande d’emoji**\n\n` +
+            `🎨 **Nouvelle demande d'emoji**\n\n` +
             `👤 Membre : ${message.author}\n` +
             `🏷️ Nom : **:${pending.emojiName}:**\n` +
             `💰 Prix : **${config.SHOP_PRICES.emoji} ${config.MONEY_NAME}s**\n` +

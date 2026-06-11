@@ -47,7 +47,7 @@ async function handleModerationButton(interaction) {
 
     if (!hasModeratorPermission(interaction.member)) {
         await interaction.editReply({
-            content: '❌ Tu n’as pas l’autorisation d’utiliser ce bouton.',
+            content: "❌ Tu n'as pas l'autorisation d'utiliser ce bouton.",
         });
 
         return true;
@@ -94,7 +94,7 @@ async function handleWarningResolve(interaction, guild) {
     );
 
     await interaction.editReply({
-        content: `✅ ${member} a retrouvé l’accès au serveur.`,
+        content: `✅ ${member} a retrouvé l'accès au serveur.`,
     });
 }
 
@@ -126,7 +126,7 @@ async function handleWarningKick(interaction, guild) {
     if (!kicked) {
         await interaction.editReply({
             content:
-                '❌ Impossible d’exclure ce membre. ' +
+                "❌ Impossible d'exclure ce membre. " +
                 'Vérifie que le rôle ChaosCore est au-dessus de son rôle.',
         });
 

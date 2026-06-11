@@ -57,7 +57,7 @@ async function sendShopIntro(shopChannel) {
         content:
             `🏦 **Boutique Oncle'Bich**\n\n` +
             `Bienvenue dans la boutique officielle des **${config.MONEY_NAME}s**.\n` +
-            `Clique sur les boutons pour faire une demande d’achat.`,
+            `Clique sur les boutons pour faire une demande d'achat.`,
     });
 }
 

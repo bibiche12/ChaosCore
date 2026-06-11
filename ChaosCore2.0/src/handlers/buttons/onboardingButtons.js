@@ -41,11 +41,11 @@ function isTeamMember(member) {
 }
 
 async function replyEphemeral(interaction, content, components = []) {
-    await interaction.reply({
-        content,
-        components,
-        flags: 64,
-    });
+    if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content, components });
+    } else {
+        await interaction.reply({ content, components, flags: 64 });
+    }
 }
 
 async function fetchMember(guild, userId) {
@@ -63,40 +63,21 @@ async function hasChosenAgeRole(member) {
     );
 }
 
-async function ensureMemberIsInStepTwo(interaction, member) {
-    if (!member.roles.cache.has(config.ROLE_ETAPE_2_ID)) {
-        await replyEphemeral(
-            interaction,
-            '❌ Tu n’es pas dans l’étape de validation.'
-        );
-
-        return false;
-    }
-
-    return true;
-}
-
-async function ensureAgeRoleChosen(interaction, member) {
-    if (!(await hasChosenAgeRole(member))) {
-        await replyEphemeral(
-            interaction,
-            '❌ Tu dois d’abord choisir Mineur ou Majeur.'
-        );
-
-        return false;
-    }
-
-    return true;
-}
-
 // ============================================================
-// FIN ONBOARDING
+// FIN ONBOARDING (Étape 4 — après Twitch/Skip)
+// Retire Role (ETAPE_2), ajoute Membre, envoie messages
 // ============================================================
 
 async function finishOnboarding(member, interaction, twitchName = null) {
-    await member.roles.remove(config.ROLE_ETAPE_2_ID).catch(() => null);
-    await member.roles.add(config.ROLE_MEMBRE_ID);
+    // Retire le rôle Role (étape 2)
+    if (member.roles.cache.has(config.ROLE_ETAPE_2_ID)) {
+        await member.roles.remove(config.ROLE_ETAPE_2_ID).catch(() => null);
+    }
 
+    // Ajoute Membre
+    await member.roles.add(config.ROLE_MEMBRE_ID).catch(console.error);
+
+    // Messages
     await sendWelcomeMessage(member, interaction);
     await sendOnboardingRecap(member, interaction, twitchName);
 }
@@ -112,10 +93,10 @@ async function sendWelcomeMessage(member, interaction) {
     await welcomeChannel.send(
         `${member}\n\n` +
         `👋 Bienvenue chez Black&Co' !\n\n` +
-        `Ravi de t’accueillir ici 🔥\n\n` +
-        `👉 N’hésite pas à rejoindre le club des bibiches si ce n’est pas déjà fait 😏\n\n` +
-        `👉 Prends un moment pour découvrir les salons et t’installer tranquillement\n\n` +
-        `🎮 Ici c’est chill, gaming et bonne ambiance avant tout !\n\n` +
+        `Ravi de t'accueillir ici 🔥\n\n` +
+        `👉 N'hésite pas à rejoindre le club des bibiches si ce n'est pas déjà fait 😏\n\n` +
+        `👉 Prends un moment pour découvrir les salons et t'installer tranquillement\n\n` +
+        `🎮 Ici c'est chill, gaming et bonne ambiance avant tout !\n\n` +
         `Amuse-toi bien parmi nous 🚀`
     ).catch(() => null);
 }
@@ -181,7 +162,9 @@ async function handleOnboardingButton(interaction) {
 }
 
 // ============================================================
-// ÂGE
+// ÉTAPE 3 — CHOIX ÂGE
+// Retire Règlement si encore présent, ajoute Mineur/Majeur
+// Garde ROLE_ETAPE_2_ID (Role), affiche boutons Twitch/Skip
 // ============================================================
 
 async function handleAgeChoice(interaction, guild, user) {
@@ -192,25 +175,32 @@ async function handleAgeChoice(interaction, guild, user) {
         return;
     }
 
-    if (!(await ensureMemberIsInStepTwo(interaction, member))) {
+    // Doit avoir le rôle Role (étape 2) pour continuer
+    if (!member.roles.cache.has(config.ROLE_ETAPE_2_ID)) {
+        await replyEphemeral(
+            interaction,
+            '❌ Tu n\'es pas dans l\'étape de validation âge.'
+        );
         return;
     }
 
     const isMinor = interaction.customId === 'onboarding_age_minor';
 
-    const roleToAdd = isMinor
-        ? config.ROLE_MINEUR_ID
-        : config.ROLE_MAJEUR_ID;
+    const roleToAdd    = isMinor ? config.ROLE_MINEUR_ID  : config.ROLE_MAJEUR_ID;
+    const roleToRemove = isMinor ? config.ROLE_MAJEUR_ID  : config.ROLE_MINEUR_ID;
 
-    const roleToRemove = isMinor
-        ? config.ROLE_MAJEUR_ID
-        : config.ROLE_MINEUR_ID;
+    // Retire l'autre rôle âge si présent
+    if (member.roles.cache.has(roleToRemove)) {
+        await member.roles.remove(roleToRemove).catch(() => null);
+    }
 
-    await member.roles.remove(roleToRemove).catch(() => null);
-    await member.roles.add(roleToAdd);
+    // Ajoute le rôle âge choisi
+    await member.roles.add(roleToAdd).catch(console.error);
 
+    // Supprime le message des boutons âge
     await interaction.message.delete().catch(() => null);
 
+    // Affiche les boutons Twitch/Skip (ROLE_ETAPE_2_ID reste sur le membre)
     await replyEphemeral(
         interaction,
         `✅ Âge enregistré.\n\n` +
@@ -220,7 +210,7 @@ async function handleAgeChoice(interaction, guild, user) {
 }
 
 // ============================================================
-// TWITCH : MODAL
+// ÉTAPE 4A — TWITCH : MODAL
 // ============================================================
 
 async function showTwitchLinkModal(interaction) {
@@ -245,35 +235,45 @@ async function showTwitchLinkModal(interaction) {
 }
 
 // ============================================================
-// TWITCH : SKIP
+// ÉTAPE 4B — SKIP TWITCH
+// Retire Role, ajoute Membre, messages bienvenue
 // ============================================================
 
 async function handleTwitchSkip(interaction, guild, user) {
+    await interaction.deferReply({ flags: 64 });
+
     const member = await fetchMember(guild, user.id);
 
     if (!member) {
-        await replyEphemeral(interaction, '❌ Membre introuvable.');
+        await interaction.editReply({ content: '❌ Membre introuvable.' });
         return;
     }
 
-    if (!(await ensureMemberIsInStepTwo(interaction, member))) {
+    // Vérification : doit avoir le rôle Role
+    if (!member.roles.cache.has(config.ROLE_ETAPE_2_ID)) {
+        await interaction.editReply({
+            content: '❌ Tu n\'es pas dans l\'étape de validation.',
+        });
         return;
     }
 
-    if (!(await ensureAgeRoleChosen(interaction, member))) {
+    // Vérification : doit avoir choisi son âge
+    if (!(await hasChosenAgeRole(member))) {
+        await interaction.editReply({
+            content: '❌ Tu dois d\'abord choisir Mineur ou Majeur.',
+        });
         return;
     }
 
     await finishOnboarding(member, interaction, null);
 
-    await replyEphemeral(
-        interaction,
-        '✅ Validation terminée ! Tu as maintenant accès au serveur.'
-    );
+    await interaction.editReply({
+        content: '✅ Validation terminée ! Tu as maintenant accès au serveur.',
+    });
 }
 
 // ============================================================
-// VALIDATION BIBICHE
+// VALIDATION BIBICHE (Team)
 // ============================================================
 
 async function handleTrustValidation(interaction, guild, user) {
@@ -290,11 +290,10 @@ async function handleTrustValidation(interaction, guild, user) {
             interaction,
             '❌ Seule la Team peut valider un membre Bibiche.'
         );
-
         return;
     }
 
-    await member.roles.add(config.ROLE_BIBICHE_ID);
+    await member.roles.add(config.ROLE_BIBICHE_ID).catch(console.error);
 
     await interaction.message.edit({
         content:
@@ -311,7 +310,8 @@ async function handleTrustValidation(interaction, guild, user) {
 }
 
 // ============================================================
-// HANDLER MODAL
+// HANDLER MODAL — TWITCH LIÉ (Étape 4A suite)
+// Retire Role, ajoute Membre, messages bienvenue
 // ============================================================
 
 async function handleOnboardingModal(interaction) {
@@ -334,11 +334,21 @@ async function handleOnboardingModal(interaction) {
         return true;
     }
 
-    if (!(await ensureMemberIsInStepTwo(interaction, member))) {
+    // Vérification : doit avoir le rôle Role
+    if (!member.roles.cache.has(config.ROLE_ETAPE_2_ID)) {
+        await replyEphemeral(
+            interaction,
+            '❌ Tu n\'es pas dans l\'étape de validation.'
+        );
         return true;
     }
 
-    if (!(await ensureAgeRoleChosen(interaction, member))) {
+    // Vérification : doit avoir choisi son âge
+    if (!(await hasChosenAgeRole(member))) {
+        await replyEphemeral(
+            interaction,
+            '❌ Tu dois d\'abord choisir Mineur ou Majeur.'
+        );
         return true;
     }
 

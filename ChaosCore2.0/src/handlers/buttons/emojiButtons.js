@@ -21,7 +21,18 @@ function isValidEmojiName(name) {
     return /^[a-z0-9_]{2,32}$/.test(name);
 }
 
+async function deferEphemeral(interaction) {
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferReply({ flags: 64 });
+    }
+}
+
 async function replyEphemeral(interaction, content) {
+    if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content });
+        return;
+    }
+
     await interaction.reply({
         content,
         flags: 64,
@@ -53,11 +64,12 @@ async function handleEmojiButton(interaction) {
 // ============================================================
 
 async function handleApproveEmoji(interaction, guild) {
+        await deferEphemeral(interaction);
     const requestId = interaction.customId.replace('approve_emoji_', '');
     const request = await db.getEmojiRequest(requestId);
 
     if (!request) {
-        await replyEphemeral(interaction, '❌ Demande d’emoji introuvable.');
+        await replyEphemeral(interaction, "❌ Demande d'emoji introuvable.");
         return;
     }
 
@@ -118,7 +130,7 @@ async function handleRejectEmoji(interaction) {
     const request = await db.getEmojiRequest(requestId);
 
     if (!request) {
-        await replyEphemeral(interaction, '❌ Demande d’emoji introuvable.');
+        await replyEphemeral(interaction, "❌ Demande d'emoji introuvable.");
         return;
     }
 
@@ -128,7 +140,7 @@ async function handleRejectEmoji(interaction) {
         components: [],
     }).catch(() => null);
 
-    await replyEphemeral(interaction, '❌ Demande d’emoji refusée.');
+    await replyEphemeral(interaction, "❌ Demande d'emoji refusée.");
 }
 
 // ============================================================
@@ -150,7 +162,7 @@ async function handleEmojiModal(interaction) {
     if (!isValidEmojiName(emojiName)) {
         await replyEphemeral(
             interaction,
-            '❌ Nom d’emoji invalide. Utilise uniquement lettres minuscules, chiffres et underscores.'
+            "❌ Nom d'emoji invalide. Utilise uniquement lettres minuscules, chiffres et underscores."
         );
 
         return true;
@@ -164,7 +176,7 @@ async function handleEmojiModal(interaction) {
     await replyEphemeral(
         interaction,
         `🎨 Emoji demandé : **:${emojiName}:**\n\n` +
-        `Maintenant, envoie l’image de ton emoji dans ce salon.\n` +
+        `Maintenant, envoie l'image de ton emoji dans ce salon.\n` +
         `⚠️ La Team validera la demande avant création.`
     );
 

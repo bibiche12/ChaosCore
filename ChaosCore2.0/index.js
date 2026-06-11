@@ -1,17 +1,55 @@
 require('dotenv').config();
 
+// ============================================================
+// IMPORTS
+// ============================================================
+
 const path = require('path');
-const { Client, GatewayIntentBits, Partials, REST, Routes } = require('discord.js');
 const express = require('express');
+
+const {
+    Client,
+    GatewayIntentBits,
+    Partials,
+    REST,
+    Routes,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+} = require('discord.js');
+
 const security = require('./src/services/security');
 const config = require('./src/config');
 const db = require('./src/db/queries');
 const twitchService = require('./src/services/twitch');
-const { setupShop, processLivePhrases } = require('./src/services/shop');
-const { handleCommand, commandDefinitions } = require('./src/handlers/commands');
-const { handleButton, handleModal, handleSelectMenu, pendingEmojiRequests } = require('./src/handlers/buttons');
-const { handleMessage, restoreDisboardReminder } = require('./src/handlers/messages');
-const { closeExpiredPolls } = require('./src/services/polls/pollService');
+
+const {
+    setupShop,
+    processLivePhrases,
+} = require('./src/services/shop');
+
+const {
+    handleCommand,
+    commandDefinitions,
+} = require('./src/handlers/commands');
+
+const {
+    handleButton,
+    handleModal,
+    handleSelectMenu,
+    pendingEmojiRequests,
+} = require('./src/handlers/buttons');
+
+const {
+    handleMessage,
+    restoreDisboardReminder,
+} = require('./src/handlers/messages');
+
+// const { closeExpiredPolls } = require('./src/services/polls/pollService');
+
+// ============================================================
+// CLIENT DISCORD
+// ============================================================
 
 const client = new Client({
     intents: [
@@ -27,26 +65,60 @@ const client = new Client({
         Partials.Reaction,
     ],
 });
+
+// ============================================================
+// VARIABLES GLOBALES
+// ============================================================
+
 const recentJoins = [];
 
+// ============================================================
+// LOGS
+// ============================================================
+
 async function sendOnboardingLog(message) {
-    const channel = await client.channels.fetch(config.ONBOARDING_LOG_CHANNEL_ID).catch(() => null);
-    if (channel) await channel.send(message).catch(console.error);
+    const channel = await client.channels
+        .fetch(config.ONBOARDING_LOG_CHANNEL_ID)
+        .catch(() => null);
+
+    if (channel) {
+        await channel.send(message).catch(console.error);
+    }
 }
+
 async function sendModLog(message) {
-    const channel = await client.channels.fetch(config.MOD_LOG_CHANNEL_ID).catch(() => null);
-    if (channel) await channel.send(message).catch(console.error);
+    const channel = await client.channels
+        .fetch(config.MOD_LOG_CHANNEL_ID)
+        .catch(() => null);
+
+    if (channel) {
+        await channel.send(message).catch(console.error);
+    }
 }
 
 async function sendLog(message) {
-    const channel = await client.channels.fetch(config.LOG_CHANNEL_ID).catch(() => null);
-    if (channel) await channel.send(message).catch(console.error);
+    const channel = await client.channels
+        .fetch(config.LOG_CHANNEL_ID)
+        .catch(() => null);
+
+    if (channel) {
+        await channel.send(message).catch(console.error);
+    }
 }
 
 async function sendContestLog(message) {
-    const channel = await client.channels.fetch(config.CONTEST_LOG_CHANNEL_ID).catch(() => null);
-    if (channel) await channel.send(message).catch(console.error);
+    const channel = await client.channels
+        .fetch(config.CONTEST_LOG_CHANNEL_ID)
+        .catch(() => null);
+
+    if (channel) {
+        await channel.send(message).catch(console.error);
+    }
 }
+
+// ============================================================
+// MAINTENANCE — RÔLES TEMPORAIRES
+// ============================================================
 
 async function cleanExpiredRoles() {
     const expiredRoles = await db.getExpiredTemporaryRoles();
@@ -57,28 +129,48 @@ async function cleanExpiredRoles() {
             const role = await guild.roles.fetch(row.role_id).catch(() => null);
             const member = await guild.members.fetch(row.user_id).catch(() => null);
 
-            if (role && member) await member.roles.remove(role).catch(() => null);
-            if (role) await role.delete('Rôle temporaire expiré').catch(() => null);
+            if (role && member) {
+                await member.roles.remove(role).catch(() => null);
+            }
+
+            if (role) {
+                await role.delete('Rôle temporaire expiré').catch(() => null);
+            }
 
             await db.deleteTemporaryRole(row.id);
+
             console.log(`🗑️ Rôle temporaire supprimé : ${row.role_name}`);
         } catch (error) {
-            console.error(`❌ Erreur suppression rôle temporaire #${row.id}:`, error);
+            console.error(
+                `❌ Erreur suppression rôle temporaire #${row.id}:`,
+                error
+            );
         }
     }
 }
 
+// ============================================================
+// MAINTENANCE — BONUS MENSUEL
+// ============================================================
+
 async function handleMonthlyBonus() {
     const now = new Date();
 
-    if (now.getDate() !== 1) return;
+    if (now.getDate() !== 1) {
+        return;
+    }
 
-    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const monthKey =
+        `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
     const alreadyGiven = await db.hasMonthlyBonusBeenGiven(monthKey);
-    if (alreadyGiven) return;
+
+    if (alreadyGiven) {
+        return;
+    }
 
     const usersCount = await db.giveMonthlyBonus(config.MONTHLY_BONUS);
+
     await db.markMonthlyBonusGiven(monthKey, usersCount);
 
     await sendLog(
@@ -88,78 +180,103 @@ async function handleMonthlyBonus() {
         `📅 Mois : **${monthKey}**`
     ).catch(() => null);
 
-    console.log(`🎁 Bonus mensuel ${monthKey} distribué à ${usersCount} membres`);
+    console.log(
+        `🎁 Bonus mensuel ${monthKey} distribué à ${usersCount} membres`
+    );
 }
 
-async function registerCommands() {
-    console.log('📋 Commandes à enregistrer :', commandDefinitions.map(c => c.name));
+// ============================================================
+// COMMANDES SLASH
+// ============================================================
 
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+async function registerCommands() {
+    console.log(
+        '📋 Commandes à enregistrer :',
+        commandDefinitions.map(command => command.name)
+    );
+
+    const rest = new REST({ version: '10' })
+        .setToken(process.env.DISCORD_TOKEN);
 
     await rest.put(
-        Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
-        { body: commandDefinitions }
+        Routes.applicationGuildCommands(
+            process.env.CLIENT_ID,
+            process.env.GUILD_ID
+        ),
+        {
+            body: commandDefinitions,
+        }
     );
 
     console.log('✅ Commandes slash enregistrées');
 }
 
-client.once('clientReady', async () => {
-    console.log(`✅ ChaosCore connecté en tant que ${client.user.tag}`);
+// ============================================================
+// TWITCH — SCAN AUTO
+// ============================================================
 
-    await db.initDatabase();
-    await registerCommands();
-
-    await restoreDisboardReminder(client);
-
-    const twitchChat = twitchService.createTwitchChat(client, sendContestLog);
-    twitchChat.connect().catch(error => {
-        console.error('❌ Erreur connexion Twitch chat:', error.message);
+function isInAutoScanWindow() {
+    const formatter = new Intl.DateTimeFormat('fr-FR', {
+        timeZone: 'Europe/Paris',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
     });
 
-    function isInAutoScanWindow() {
-        const formatter = new Intl.DateTimeFormat('fr-FR', {
-            timeZone: 'Europe/Paris',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-        });
+    const now = formatter.format(new Date());
 
-        const now = formatter.format(new Date());
+    return (
+        now >= config.TWITCH_AUTO_SCAN_START &&
+        now <= config.TWITCH_AUTO_SCAN_END
+    );
+}
 
-        return now >= config.TWITCH_AUTO_SCAN_START && now <= config.TWITCH_AUTO_SCAN_END;
-    }
+async function handleLiveEndAuto() {
+    const liveState = twitchService.getLiveState();
 
-    async function handleLiveEndAuto() {
-        const liveState = twitchService.getLiveState();
-        const participants = Object.keys(liveState.currentLive.users || {}).length;
-        const summary = twitchService.generateLiveStatsSummary(participants);
+    const participants = Object.keys(
+        liveState.currentLive.users || {}
+    ).length;
 
-        twitchService.stopCurrentLive();
+    const summary = twitchService.generateLiveStatsSummary(participants);
 
-        await sendContestLog(
-            `⚫ **Live terminé automatiquement**\n\n` +
-            summary
-        ).catch(() => null);
+    twitchService.stopCurrentLive();
 
-        console.log('⚫ Fin de live détectée automatiquement');
-    }
+    await sendContestLog(
+        `⚫ **Live terminé automatiquement**\n\n` +
+        summary
+    ).catch(() => null);
 
+    console.log('⚫ Fin de live détectée automatiquement');
+}
+
+function startTwitchAutoScan() {
     setInterval(() => {
         if (!config.TWITCH_AUTO_SCAN_ENABLED) return;
         if (!isInAutoScanWindow()) return;
 
         const liveState = twitchService.getLiveState();
-        if (liveState.liveContestActive) return;
 
-        twitchService.checkTwitchLive(client, async () => {
-            await processLivePhrases(client).catch(console.error);
-        }).catch(console.error);
+        if (liveState.liveContestActive) {
+            return;
+        }
+
+        twitchService.checkTwitchLive(
+            client,
+            async () => {
+                await processLivePhrases(client).catch(console.error);
+            }
+        ).catch(console.error);
     }, config.TWITCH_AUTO_SCAN_INTERVAL_MS);
+}
 
+function startTwitchLiveEndScan() {
     setInterval(() => {
         const liveState = twitchService.getLiveState();
-        if (!liveState.liveContestActive) return;
+
+        if (!liveState.liveContestActive) {
+            return;
+        }
 
         twitchService.checkTwitchLive(
             client,
@@ -169,6 +286,33 @@ client.once('clientReady', async () => {
             handleLiveEndAuto
         ).catch(console.error);
     }, config.TWITCH_LIVE_END_SCAN_INTERVAL_MS);
+}
+
+// ============================================================
+// CLIENT READY
+// ============================================================
+
+client.once('clientReady', async () => {
+    console.log(`✅ ChaosCore connecté en tant que ${client.user.tag}`);
+
+    await db.initDatabase();
+    await registerCommands();
+    await restoreDisboardReminder(client);
+
+    const twitchChat = twitchService.createTwitchChat(
+        client,
+        sendContestLog
+    );
+
+    twitchChat.connect().catch(error => {
+        console.error(
+            '❌ Erreur connexion Twitch chat:',
+            error.message
+        );
+    });
+
+    startTwitchAutoScan();
+    startTwitchLiveEndScan();
 
     setInterval(cleanExpiredRoles, 10 * 60 * 1000);
     cleanExpiredRoles();
@@ -179,9 +323,16 @@ client.once('clientReady', async () => {
 
     handleMonthlyBonus().catch(console.error);
 });
+
+// ============================================================
+// LOGS MODÉRATION — MESSAGE SUPPRIMÉ
+// ============================================================
+
 client.on('messageDelete', async (message) => {
     try {
-        if (!message.guild || message.author?.bot) return;
+        if (!message.guild || message.author?.bot) {
+            return;
+        }
 
         await sendModLog(
             `🗑️ **Message supprimé**\n\n` +
@@ -194,10 +345,19 @@ client.on('messageDelete', async (message) => {
     }
 });
 
+// ============================================================
+// LOGS MODÉRATION — MESSAGE MODIFIÉ
+// ============================================================
+
 client.on('messageUpdate', async (oldMessage, newMessage) => {
     try {
-        if (!oldMessage.guild || oldMessage.author?.bot) return;
-        if (oldMessage.content === newMessage.content) return;
+        if (!oldMessage.guild || oldMessage.author?.bot) {
+            return;
+        }
+
+        if (oldMessage.content === newMessage.content) {
+            return;
+        }
 
         await sendModLog(
             `✏️ **Message modifié**\n\n` +
@@ -210,6 +370,10 @@ client.on('messageUpdate', async (oldMessage, newMessage) => {
         console.error('❌ Erreur log messageUpdate:', error);
     }
 });
+
+// ============================================================
+// INTERACTIONS
+// ============================================================
 
 client.on('interactionCreate', async (interaction) => {
     try {
@@ -253,14 +417,29 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
+// ============================================================
+// MESSAGES
+// ============================================================
+
 client.on('messageCreate', (message) => {
-    handleMessage(message, client, sendLog, pendingEmojiRequests).catch(console.error);
+    handleMessage(
+        message,
+        client,
+        sendLog,
+        pendingEmojiRequests
+    ).catch(console.error);
 });
+
+// ============================================================
+// SERVEUR WEB OVERLAY
+// ============================================================
 
 const app = express();
 
 app.get('/overlay-view', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'overlay.html'));
+    res.sendFile(
+        path.join(__dirname, 'public', 'overlay.html')
+    );
 });
 
 app.get('/overlay', (req, res) => {
@@ -274,7 +453,7 @@ app.get('/overlay/latest', async (req, res) => {
         if (!events || events.length === 0) {
             return res.json({
                 active: false,
-                items: []
+                items: [],
             });
         }
 
@@ -286,30 +465,31 @@ app.get('/overlay/latest', async (req, res) => {
                 rewardName: event.title,
                 userInput: event.text || '',
                 author: event.author || '',
-                createdAt: event.created_at
-            }))
+                createdAt: event.created_at,
+            })),
         });
-
     } catch (error) {
         console.error('❌ Erreur route /overlay/latest:', error);
 
         return res.status(500).json({
             active: false,
-            items: []
+            items: [],
         });
     }
 });
+
 app.get('/test', (req, res) => {
     res.send('TEST OK ✅');
 });
 
-const PORT = process.env.PORT || 3000;
+// ============================================================
+// ANTI-RAID
+// ============================================================
 
-app.listen(PORT, () => {
-    console.log(`🌐 Overlay Web démarré sur le port ${PORT}`);
-});
 async function triggerRaidAlert(members) {
-    if (security.isRaidMode()) return;
+    if (security.isRaidMode()) {
+        return;
+    }
 
     security.enableRaidMode();
 
@@ -317,18 +497,24 @@ async function triggerRaidAlert(members) {
         .fetch(config.SECURITY_LOG_CHANNEL_ID)
         .catch(() => null);
 
-    if (!channel) return;
+    if (!channel) {
+        return;
+    }
 
     await channel.send(
         `🚨 **RAID POTENTIEL DÉTECTÉ**\n\n` +
         `👥 Arrivées : **${members.length} membres**\n` +
         `⏱️ Fenêtre : **2 minutes**\n\n` +
         `🛡️ Mode Raid activé automatiquement.\n\n` +
-        members.map(m => `• ${m.user.tag}`).join('\n')
+        members.map(member => `• ${member.user.tag}`).join('\n')
     ).catch(() => null);
 
     console.log('🚨 MODE RAID ACTIVÉ');
 }
+
+// ============================================================
+// ONBOARDING — ARRIVÉE MEMBRE
+// ============================================================
 
 client.on('guildMemberAdd', async (member) => {
     try {
@@ -360,15 +546,26 @@ client.on('guildMemberAdd', async (member) => {
             `🧩 Rôle ajouté : <@&${config.ROLE_ETAPE_1_ID}>`
         ).catch(() => null);
 
-        console.log(`👋 Nouveau membre : ${member.user.tag} → Étape 1`);
+        console.log(
+            `👋 Nouveau membre : ${member.user.tag} → Étape 1`
+        );
     } catch (error) {
-        console.error('❌ Erreur guildMemberAdd onboarding:', error.message);
+        console.error(
+            '❌ Erreur guildMemberAdd onboarding:',
+            error.message
+        );
     }
 });
 
+// ============================================================
+// ONBOARDING — RÈGLEMENT ACCEPTÉ
+// ============================================================
+
 client.on('messageReactionAdd', async (reaction, user) => {
     try {
-        if (user.bot) return;
+        if (user.bot) {
+            return;
+        }
 
         if (security.isRaidMode()) {
             return;
@@ -378,55 +575,38 @@ client.on('messageReactionAdd', async (reaction, user) => {
             await reaction.fetch().catch(() => null);
         }
 
-        if (!reaction.message || reaction.message.id !== config.REGLEMENT_MESSAGE_ID) return;
+        if (!reaction.message || reaction.message.id !== config.REGLEMENT_MESSAGE_ID) {
+            return;
+        }
 
         const emojiName = reaction.emoji.name;
-        if (emojiName !== config.REGLEMENT_EMOJI_NAME) return;
+
+        if (emojiName !== config.REGLEMENT_EMOJI_NAME) {
+            return;
+        }
 
         const guild = reaction.message.guild;
-        if (!guild) return;
 
-        const member = await guild.members.fetch(user.id).catch(() => null);
-        if (!member) return;
+        if (!guild) {
+            return;
+        }
 
-        if (!member.roles.cache.has(config.ROLE_ETAPE_1_ID)) return;
+        const member = await guild.members
+            .fetch(user.id)
+            .catch(() => null);
+
+        if (!member) {
+            return;
+        }
+
+        if (!member.roles.cache.has(config.ROLE_ETAPE_1_ID)) {
+            return;
+        }
 
         await member.roles.remove(config.ROLE_ETAPE_1_ID).catch(() => null);
         await member.roles.add(config.ROLE_ETAPE_2_ID);
 
-        const rolesChannel = await client.channels.fetch(config.SALON_ROLES_ID).catch(() => null);
-
-        if (rolesChannel) {
-            const {
-                ActionRowBuilder,
-                ButtonBuilder,
-                ButtonStyle,
-            } = require('discord.js');
-
-            const ageButtons = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('onboarding_age_minor')
-                    .setLabel('Mineur')
-                    .setEmoji('🔞')
-                    .setStyle(ButtonStyle.Secondary),
-
-                new ButtonBuilder()
-                    .setCustomId('onboarding_age_adult')
-                    .setLabel('Majeur')
-                    .setEmoji('✅')
-                    .setStyle(ButtonStyle.Success)
-            );
-
-            await rolesChannel.send({
-                content:
-                    `🦌 Bienvenue ${member} !\n\n` +
-                    `Pour continuer, choisis ton statut :\n\n` +
-                    `🔞 **Mineur**\n` +
-                    `✅ **Majeur**\n\n` +
-                    `Cette étape est obligatoire pour débloquer le serveur.`,
-                components: [ageButtons],
-            }).catch(() => null);
-        }
+        await sendAgeChoiceMessage(member);
 
         await sendOnboardingLog(
             `✅ **Règlement accepté**\n\n` +
@@ -435,27 +615,84 @@ client.on('messageReactionAdd', async (reaction, user) => {
             `➕ Ajouté : <@&${config.ROLE_ETAPE_2_ID}>`
         ).catch(() => null);
 
-        console.log(`✅ ${member.user.tag} a accepté le règlement → Étape 2`);
+        console.log(
+            `✅ ${member.user.tag} a accepté le règlement → Étape 2`
+        );
     } catch (error) {
-        console.error('❌ Erreur messageReactionAdd onboarding:', error.message);
+        console.error(
+            '❌ Erreur messageReactionAdd onboarding:',
+            error.message
+        );
     }
 });
 
+async function sendAgeChoiceMessage(member) {
+    const rolesChannel = await client.channels
+        .fetch(config.SALON_ROLES_ID)
+        .catch(() => null);
+
+    if (!rolesChannel) {
+        return;
+    }
+
+    const ageButtons = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('onboarding_age_minor')
+            .setLabel('Mineur')
+            .setEmoji('🔞')
+            .setStyle(ButtonStyle.Secondary),
+
+        new ButtonBuilder()
+            .setCustomId('onboarding_age_adult')
+            .setLabel('Majeur')
+            .setEmoji('✅')
+            .setStyle(ButtonStyle.Success)
+    );
+
+    await rolesChannel.send({
+        content:
+            `🦌 Bienvenue ${member} !\n\n` +
+            `Pour continuer, choisis ton statut :\n\n` +
+            `🔞 **Mineur**\n` +
+            `✅ **Majeur**\n\n` +
+            `Cette étape est obligatoire pour débloquer le serveur.`,
+        components: [ageButtons],
+    }).catch(() => null);
+}
+
+// ============================================================
+// DÉPART MEMBRE
+// ============================================================
+
 client.on('guildMemberRemove', async (member) => {
     try {
+        console.log(`👋 Départ détecté : ${member.user.tag}`);
+
         const goodbyeChannel = await client.channels
             .fetch(config.GOODBYE_CHANNEL_ID)
             .catch(() => null);
 
-        if (!goodbyeChannel) return;
+        if (!goodbyeChannel) {
+            console.log('❌ Salon au revoir introuvable');
+            return;
+        }
 
         await goodbyeChannel.send(
             `👋 ${member.user.tag} a quitté Black&Co'`
         ).catch(() => null);
-
     } catch (error) {
         console.error('❌ Erreur départ membre:', error);
     }
+});
+
+// ============================================================
+// DÉMARRAGE
+// ============================================================
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+    console.log(`🌐 Overlay Web démarré sur le port ${PORT}`);
 });
 
 client.login(process.env.DISCORD_TOKEN);

@@ -3,269 +3,197 @@
 // ============================================================
 
 const {
-    ModalBuilder,
-    TextInputBuilder,
-    TextInputStyle,
     ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
 } = require('discord.js');
 
 const config = require('../../config');
 const db = require('../../db/queries');
 
-const { buildPollEmbed } = require('../../services/polls/pollResults');
-const { closePollAndPublishResults } = require('../../services/polls/pollService');
+const {
+    buildPollEmbed,
+} = require('../../services/polls/pollResults');
 
 // ============================================================
-// HELPERS
+// COULEURS DISPONIBLES
 // ============================================================
 
-function hasModeratorPermission(member) {
-    const isModerator = member.roles.cache.has(config.MODERATOR_ROLE_ID);
-    const isTeam = member.roles.cache.some(
-        role => role.name === config.TEAM_ROLE_NAME
-    );
-
-    return isModerator || isTeam;
-}
-
-async function replyEphemeral(interaction, content) {
-    await interaction.reply({
-        content,
-        flags: 64,
-    });
-}
-
-async function editEphemeral(interaction, content) {
-    await interaction.editReply({
-        content,
-    });
-}
-
-async function updatePollMessage(interaction, pollId) {
-    const poll = await db.getPoll(pollId);
-
-    if (!poll || poll.closed) {
-        return;
-    }
-
-    const options = await db.getPollOptions(pollId);
-    const results = await db.getPollResults(pollId);
-
-    await interaction.message.edit({
-        embeds: [buildPollEmbed(poll, options, results)],
-    }).catch(() => null);
-}
+const COLORS = {
+    rouge: 0xFF0000,
+    orange: 0xFF8000,
+    jaune: 0xFFD700,
+    vert: 0x00CC66,
+    bleu: 0x0099FF,
+    violet: 0x9933FF,
+    rose: 0xFF69B4,
+    noir: 0x2F3136,
+};
 
 // ============================================================
-// HANDLER BOUTONS
+// HANDLER COMMANDE /SONDAGE
 // ============================================================
 
-async function handlePollButton(interaction) {
-    const { customId } = interaction;
-
-    if (customId.startsWith('poll_close_')) {
-        await handlePollClose(interaction);
-        return true;
-    }
-
-    if (customId.startsWith('poll_free_')) {
-        await handlePollFreeAnswerButton(interaction);
-        return true;
-    }
-
-    if (customId.startsWith('poll_vote_')) {
-        await handlePollVote(interaction);
-        return true;
-    }
-
-    return false;
-}
-
-// ============================================================
-// CLÔTURE DU SONDAGE
-// ============================================================
-
-async function handlePollClose(interaction) {
-    await interaction.deferReply({ flags: 64 });
-
-    if (!hasModeratorPermission(interaction.member)) {
-        await editEphemeral(
-            interaction,
-            '❌ Seule la modération peut clôturer un sondage.'
-        );
-
-        return;
-    }
-
-    const pollId = interaction.customId.replace('poll_close_', '');
-
-    const closed = await closePollAndPublishResults(
-        interaction.client,
-        pollId,
-        interaction.user.tag
-    );
-
-    await editEphemeral(
-        interaction,
-        closed
-            ? '🔒 Sondage clôturé et résultats envoyés.'
-            : '❌ Sondage introuvable ou déjà clôturé.'
-    );
-}
-
-// ============================================================
-// BOUTON RÉPONSE LIBRE
-// ============================================================
-
-async function handlePollFreeAnswerButton(interaction) {
-    const pollId = interaction.customId.replace('poll_free_', '');
-    const poll = await db.getPoll(pollId);
-
-    if (!poll || poll.closed) {
-        await replyEphemeral(
-            interaction,
-            '❌ Ce sondage est terminé ou introuvable.'
-        );
-
-        return;
-    }
-
-    const modal = new ModalBuilder()
-        .setCustomId(`poll_free_modal_${pollId}`)
-        .setTitle('Réponse libre');
-
-    const input = new TextInputBuilder()
-        .setCustomId('free_answer')
-        .setLabel('Ta réponse')
-        .setStyle(TextInputStyle.Paragraph)
-        .setRequired(true)
-        .setMaxLength(500);
-
-    modal.addComponents(
-        new ActionRowBuilder().addComponents(input)
-    );
-
-    await interaction.showModal(modal);
-}
-
-// ============================================================
-// BOUTON VOTE
-// ============================================================
-
-async function handlePollVote(interaction) {
-    await interaction.deferReply({ flags: 64 });
-
-    const { pollId, optionId } = parseVoteCustomId(interaction.customId);
-    const poll = await db.getPoll(pollId);
-
-    if (!poll || poll.closed) {
-        await editEphemeral(
-            interaction,
-            '❌ Ce sondage est terminé ou introuvable.'
-        );
-
-        return;
-    }
-
-    const alreadyVoted = await db.hasUserVotedOption(
-        pollId,
-        interaction.user.id,
-        optionId
-    );
-
-    if (alreadyVoted) {
-        await db.removePollVote(
-            pollId,
-            interaction.user.id,
-            optionId
-        );
-
-        await updatePollMessage(interaction, pollId);
-
-        await editEphemeral(
-            interaction,
-            '↩️ Ton vote a été retiré.'
-        );
-
-        return;
-    }
-
-    if (!poll.allow_multiple) {
-        await db.clearUserPollVotes(
-            pollId,
-            interaction.user.id
-        );
-    }
-
-    await db.addPollVote(
-        pollId,
-        interaction.user.id,
-        optionId
-    );
-
-    await updatePollMessage(interaction, pollId);
-
-    await editEphemeral(
-        interaction,
-        poll.allow_multiple
-            ? '✅ Vote ajouté.'
-            : '✅ Vote enregistré. Ton ancien vote a été remplacé.'
-    );
-}
-
-function parseVoteCustomId(customId) {
-    const parts = customId.split('_');
-
-    return {
-        pollId: parts[2],
-        optionId: parts[3],
-    };
-}
-
-// ============================================================
-// HANDLER MODAL
-// ============================================================
-
-async function handlePollModal(interaction) {
-    if (!interaction.customId.startsWith('poll_free_modal_')) {
+async function handlePollCommand(interaction) {
+    if (interaction.commandName !== 'sondage') {
         return false;
     }
 
-    await handlePollFreeAnswerModal(interaction);
+    await interaction.deferReply({ flags: 64 });
+
+    // --------------------------------------------------------
+    // Récupération des options
+    // --------------------------------------------------------
+
+    const title = interaction.options.getString('titre');
+    const question = interaction.options.getString('question');
+
+    const durationType = interaction.options.getString('duree');
+    const color = interaction.options.getString('couleur');
+
+    const allowMultiple = interaction.options.getBoolean('multiple');
+    const allowFreeAnswer = interaction.options.getBoolean('reponse_libre');
+
+    const choices = [
+        interaction.options.getString('choix1'),
+        interaction.options.getString('choix2'),
+        interaction.options.getString('choix3'),
+        interaction.options.getString('choix4'),
+        interaction.options.getString('choix5'),
+        interaction.options.getString('choix6'),
+    ].filter(Boolean);
+
+    // --------------------------------------------------------
+    // Création du sondage
+    // --------------------------------------------------------
+
+    const endsAt = getPollEndDate(durationType);
+
+    const poll = await db.createPoll({
+        guildId: interaction.guild.id,
+        channelId: config.POLL_SEND_CHANNEL_ID,
+        creatorId: interaction.user.id,
+        title,
+        question,
+        color,
+        allowMultiple,
+        allowFreeAnswer,
+        durationType,
+        endsAt,
+    });
+
+    for (const choice of choices) {
+        await db.addPollOption(poll.id, choice);
+    }
+
+    const options = await db.getPollOptions(poll.id);
+
+    // --------------------------------------------------------
+    // Boutons de vote
+    // --------------------------------------------------------
+
+    const row1 = new ActionRowBuilder();
+    const row2 = new ActionRowBuilder();
+
+    options.forEach((option, index) => {
+        const button = new ButtonBuilder()
+            .setCustomId(`poll_vote_${poll.id}_${option.id}`)
+            .setLabel(`${index + 1}`)
+            .setStyle(ButtonStyle.Primary);
+
+        if (index < 5) {
+            row1.addComponents(button);
+        } else {
+            row2.addComponents(button);
+        }
+    });
+
+    // --------------------------------------------------------
+    // Boutons de contrôle
+    // --------------------------------------------------------
+
+    const controlRow = new ActionRowBuilder();
+
+    if (allowFreeAnswer) {
+        controlRow.addComponents(
+            new ButtonBuilder()
+                .setCustomId(`poll_free_${poll.id}`)
+                .setLabel('Réponse libre')
+                .setEmoji('✍️')
+                .setStyle(ButtonStyle.Secondary)
+        );
+    }
+
+    controlRow.addComponents(
+        new ButtonBuilder()
+            .setCustomId(`poll_close_${poll.id}`)
+            .setLabel('Clôturer')
+            .setEmoji('🔒')
+            .setStyle(ButtonStyle.Danger)
+    );
+
+    // --------------------------------------------------------
+    // Assemblage des composants
+    // --------------------------------------------------------
+
+    const components = [row1];
+
+    if (row2.components.length > 0) {
+        components.push(row2);
+    }
+
+    components.push(controlRow);
+
+    // --------------------------------------------------------
+    // Envoi du sondage
+    // --------------------------------------------------------
+
+    const pollChannel = await interaction.client.channels
+        .fetch(config.POLL_SEND_CHANNEL_ID)
+        .catch(() => null);
+
+    if (!pollChannel) {
+        await interaction.editReply({
+            content: "❌ Salon d'envoi du sondage introuvable.",
+        });
+
+        return true;
+    }
+
+    const message = await pollChannel.send({
+        embeds: [buildPollEmbed(poll, options)],
+        components,
+    });
+
+    await db.setPollMessageId(poll.id, message.id);
+
+    await interaction.editReply({
+        content: `✅ Sondage envoyé dans <#${config.POLL_SEND_CHANNEL_ID}>.`,
+    });
+
     return true;
 }
 
 // ============================================================
-// MODAL RÉPONSE LIBRE
+// CALCUL DE LA DATE DE FIN
 // ============================================================
 
-async function handlePollFreeAnswerModal(interaction) {
-    await interaction.deferReply({ flags: 64 });
+function getPollEndDate(durationType) {
+    const now = new Date();
 
-    const pollId = interaction.customId.replace('poll_free_modal_', '');
-    const answer = interaction.fields.getTextInputValue('free_answer');
-
-    const poll = await db.getPoll(pollId);
-
-    if (!poll || poll.closed) {
-        await editEphemeral(
-            interaction,
-            '❌ Ce sondage est terminé ou introuvable.'
-        );
-
-        return;
+    if (durationType === '1h') {
+        return new Date(now.getTime() + 60 * 60 * 1000);
     }
 
-    await db.addPollFreeAnswer(
-        pollId,
-        interaction.user.id,
-        answer
-    );
+    if (durationType === '1j') {
+        return new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    }
 
-    await editEphemeral(
-        interaction,
-        '✅ Ta réponse libre a été enregistrée.'
-    );
+    if (durationType === '1semaine') {
+        return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    }
+
+    return new Date(now.getTime() + 60 * 60 * 1000);
 }
 
 // ============================================================
@@ -273,6 +201,5 @@ async function handlePollFreeAnswerModal(interaction) {
 // ============================================================
 
 module.exports = {
-    handlePollButton,
-    handlePollModal,
+    handlePollCommand,
 };
