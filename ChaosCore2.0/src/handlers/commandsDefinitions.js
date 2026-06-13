@@ -63,6 +63,9 @@ const commandDefinitions = [
                 .setDescription('Texte à afficher')
                 .setRequired(true)
         ),
+        new SlashCommandBuilder()
+         .setName('setupticket')
+         .setDescription('Créer le panneau de tickets support'),
 
     // =========================
     // Économie
@@ -276,6 +279,33 @@ const commandDefinitions = [
                 .setDescription('Choix 6')
                 .setRequired(false)
         ),
+        new SlashCommandBuilder()
+    .setName('anniversaire')
+    .setDescription('Enregistrer ton anniversaire')
+    .addIntegerOption(option =>
+        option.setName('jour')
+            .setDescription('Jour de ton anniversaire')
+            .setRequired(true)
+            .setMinValue(1)
+            .setMaxValue(31)
+    )
+    .addIntegerOption(option =>
+        option.setName('mois')
+            .setDescription('Mois de ton anniversaire')
+            .setRequired(true)
+            .setMinValue(1)
+            .setMaxValue(12)
+    ),
+
+new SlashCommandBuilder()
+    .setName('setupanniversaire')
+    .setDescription("Configurer le salon d'envoi des anniversaires")
+    .addChannelOption(option =>
+        option.setName('salon')
+            .setDescription("Salon d'envoi du message anniversaire")
+            .setRequired(true)
+    ),
+    
 ].map(c => c.toJSON());
 
 module.exports = {

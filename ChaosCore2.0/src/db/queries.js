@@ -189,6 +189,47 @@ async function initDatabase() {
         ADD COLUMN IF NOT EXISTS completed BOOLEAN DEFAULT false;
     `);
 
+    await pool.query(`
+    CREATE TABLE IF NOT EXISTS support_tickets (
+        id SERIAL PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        closed_at TIMESTAMP
+    );
+`);
+await pool.query(`
+    CREATE TABLE IF NOT EXISTS birthdays (
+        guild_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        day INTEGER NOT NULL,
+        month INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (guild_id, user_id)
+    );
+`);
+
+await pool.query(`
+    CREATE TABLE IF NOT EXISTS birthday_settings (
+        guild_id TEXT PRIMARY KEY,
+        channel_id TEXT NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+`);
+
+await pool.query(`
+    CREATE TABLE IF NOT EXISTS birthday_announcements (
+        guild_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        announce_date TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (guild_id, user_id, announce_date)
+    );
+`);
+
     console.log('✅ Connexion PostgreSQL prête');
 }
 
@@ -206,7 +247,8 @@ const temporaryRoles = require('./modules/temporaryRoles')(pool);
 const moderation = require('./modules/moderation')(pool);
 const polls = require('./modules/polls')(pool);
 const bump = require('./modules/bump')(pool);
-
+const supportTickets = require('./modules/supportTickets')(pool);
+const birthdays = require('./modules/birthdays')(pool);
 // ============================================================
 // EXPORTS
 // ============================================================
@@ -225,4 +267,6 @@ module.exports = {
     ...moderation,
     ...polls,
     ...bump,
+    ...supportTickets,
+    ...birthdays,
 };

@@ -44,7 +44,7 @@ const {
     handleMessage,
     restoreDisboardReminder,
 } = require('./src/handlers/messages');
-
+const { startBirthdayJob } = require('./src/services/birthdayService');
 // const { closeExpiredPolls } = require('./src/services/polls/pollService');
 
 // ============================================================
@@ -298,6 +298,7 @@ client.once('clientReady', async () => {
     await db.initDatabase();
     await registerCommands();
     await restoreDisboardReminder(client);
+    
 
     const twitchChat = twitchService.createTwitchChat(
         client,
