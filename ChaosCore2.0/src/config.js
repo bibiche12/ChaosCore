@@ -8,7 +8,8 @@ module.exports = {
     // ÉCONOMIE
     // ============================================================
 
-    MONEY_NAME: 'Bichcoin',
+    MONEY_NAME: 'Monnaie',
+    TICKETS_NAME: 'Tickets Events',
     POINTS_PER_MESSAGE: 1,
     MESSAGE_COOLDOWN_MS: 60 * 1000,
     MONTHLY_BONUS: 250,
@@ -46,7 +47,6 @@ module.exports = {
     GOODBYE_CHANNEL_ID: '1513129181989437460',
     SUPPORT_TICKET_PANEL_CHANNEL_ID: '1515302104648908831',
     SUPPORT_TICKET_CATEGORY_ID: '1514177674749284433',
-    
 
     // ============================================================
     // ONBOARDING / SÉCURITÉ
@@ -64,7 +64,7 @@ module.exports = {
     POLL_SEND_CHANNEL_ID: '1503987769364713587',
 
     // ============================================================
-    // SALONS AUTORISÉS POUR LES BICHCOINS
+    // SALONS AUTORISÉS POUR LA MONNAIE
     // ============================================================
 
     ALLOWED_MONEY_CHANNELS: [
@@ -153,7 +153,7 @@ module.exports = {
     TWITCH_LIVE_END_SCAN_INTERVAL_MS: 2 * 60 * 1000,
 
     // ============================================================
-    // TICKETS DU CHAOS
+    // TICKETS EVENTS
     // ============================================================
 
     TICKET_PRESENCE: 2,

@@ -1,7 +1,3 @@
-// ============================================================
-// IMPORTS
-// ============================================================
-
 const {
     ActionRowBuilder,
     ButtonBuilder,
@@ -10,10 +6,6 @@ const {
 
 const config = require('../config');
 const db = require('../db/queries');
-
-// ============================================================
-// HELPERS
-// ============================================================
 
 function buildBuyButton(customId, label, emoji) {
     return new ActionRowBuilder().addComponents(
@@ -40,10 +32,6 @@ async function fetchLogChannel(discordClient) {
         .catch(() => null);
 }
 
-// ============================================================
-// INSTALLATION BOUTIQUE
-// ============================================================
-
 async function setupShop(shopChannel) {
     await sendShopIntro(shopChannel);
     await sendEmojiShopItem(shopChannel);
@@ -55,7 +43,7 @@ async function setupShop(shopChannel) {
 async function sendShopIntro(shopChannel) {
     await shopChannel.send({
         content:
-            `🏦 **Boutique Oncle'Bich**\n\n` +
+            `🏦 **Boutique**\n\n` +
             `Bienvenue dans la boutique officielle des **${config.MONEY_NAME}s**.\n` +
             `Clique sur les boutons pour faire une demande d'achat.`,
     });
@@ -68,9 +56,7 @@ async function sendEmojiShopItem(shopChannel) {
             `💰 Prix : **${config.SHOP_PRICES.emoji} ${config.MONEY_NAME}s**\n` +
             `📌 Validation : manuelle\n` +
             `📎 Image à fournir après la demande`,
-        components: [
-            buildBuyButton('shop_buy_emoji', 'Acheter', '🛒'),
-        ],
+        components: [buildBuyButton('shop_buy_emoji', 'Acheter', '🛒')],
     });
 }
 
@@ -82,9 +68,7 @@ async function sendRoleShopItem(shopChannel) {
             `💰 2 semaines : **${config.SHOP_PRICES.role[14]} ${config.MONEY_NAME}s**\n` +
             `💰 1 mois : **${config.SHOP_PRICES.role[30]} ${config.MONEY_NAME}s**\n\n` +
             `🎨 Couleurs disponibles : Rouge, Orange, Jaune, Vert, Bleu, Violet, Rose, Noir, Blanc, Marron`,
-        components: [
-            buildBuyButton('shop_buy_role', 'Acheter', '🛒'),
-        ],
+        components: [buildBuyButton('shop_buy_role', 'Acheter', '🛒')],
     });
 }
 
@@ -94,9 +78,7 @@ async function sendGageShopItem(shopChannel) {
             `😈 **Gage imposé**\n\n` +
             `💰 Prix : **${config.SHOP_PRICES.gage} ${config.MONEY_NAME}s**\n` +
             `📌 Validation : manuelle`,
-        components: [
-            buildBuyButton('shop_buy_gage', 'Acheter', '🛒'),
-        ],
+        components: [buildBuyButton('shop_buy_gage', 'Acheter', '🛒')],
     });
 }
 
@@ -107,22 +89,14 @@ async function sendPhraseShopItem(shopChannel) {
             `💰 1 live : **${config.SHOP_PRICES.phrase[1]} ${config.MONEY_NAME}s**\n` +
             `💰 2 lives : **${config.SHOP_PRICES.phrase[2]} ${config.MONEY_NAME}s**\n` +
             `📌 Validation : manuelle`,
-        components: [
-            buildBuyButton('shop_buy_phrase', 'Acheter', '🛒'),
-        ],
+        components: [buildBuyButton('shop_buy_phrase', 'Acheter', '🛒')],
     });
 }
-
-// ============================================================
-// PHRASES LIVE
-// ============================================================
 
 async function processLivePhrases(discordClient, guildId) {
     const updatedPhrases = await db.decrementLivePhrases(guildId);
 
-    if (!updatedPhrases || updatedPhrases.length === 0) {
-        return;
-    }
+    if (!updatedPhrases || updatedPhrases.length === 0) return;
 
     const logChannel = await fetchLogChannel(discordClient);
 
@@ -132,9 +106,7 @@ async function processLivePhrases(discordClient, guildId) {
 }
 
 async function sendPhraseUpdateLog(logChannel, phrase) {
-    if (!logChannel) {
-        return;
-    }
+    if (!logChannel) return;
 
     const phraseText = parsePhraseContent(phrase.content);
 
@@ -144,7 +116,6 @@ async function sendPhraseUpdateLog(logChannel, phrase) {
             `👤 Membre : <@${phrase.user_id}>\n` +
             `📝 Phrase : ${phraseText}`
         ).catch(() => null);
-
         return;
     }
 
@@ -156,11 +127,4 @@ async function sendPhraseUpdateLog(logChannel, phrase) {
     ).catch(() => null);
 }
 
-// ============================================================
-// EXPORTS
-// ============================================================
-
-module.exports = {
-    setupShop,
-    processLivePhrases,
-};
+module.exports = { setupShop, processLivePhrases };
