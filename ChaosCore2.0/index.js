@@ -145,26 +145,15 @@ async function handleMonthlyBonus() {
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
     for (const [guildId] of client.guilds.cache) {
-        try {
-            const alreadyGiven = await db.hasMonthlyBonusBeenGiven(guildId, monthKey);
-            if (alreadyGiven) continue;
+    const settings = await db.getServerSettings(guildId).catch(() => null);
+    const usernameToUse = settings?.twitch_username;
 
-            const usersCount = await db.giveMonthlyBonus(guildId, config.MONTHLY_BONUS);
-            await db.markMonthlyBonusGiven(guildId, monthKey, usersCount);
+    // Ne démarre Twitch que si le serveur a configuré son propre username
+    // OU si c'est le guild principal
+    if (!usernameToUse && guildId !== process.env.GUILD_ID) continue;
 
-            await sendLog(
-                `🎁 **Bonus mensuel distribué**\n\n` +
-                `💰 Montant : **${config.MONTHLY_BONUS} ${config.MONEY_NAME}s**\n` +
-                `👥 Membres crédités : **${usersCount}**\n` +
-                `📅 Mois : **${monthKey}**`,
-                guildId
-            ).catch(() => null);
-
-            console.log(`🎁 [${guildId}] Bonus mensuel ${monthKey} → ${usersCount} membres`);
-        } catch (err) {
-            console.error(`❌ handleMonthlyBonus [${guildId}]:`, err.message);
-        }
-    }
+    const usernameToUse = usernameToUse || config.TWITCH_USERNAME;
+    ...
 }
 
 // ============================================================
@@ -202,25 +191,25 @@ async function handleLiveEndAuto(guildId) {
     console.log(`⚫ [${guildId}] Fin de live détectée automatiquement`);
 }
 
-function startTwitchAutoScan(guildId, twitchUsername) {
+function startTwitchAutoScan(guildId, usernameToUse) {
     setInterval(async () => {
         if (!config.TWITCH_AUTO_SCAN_ENABLED) return;
         if (!isInAutoScanWindow()) return;
         const liveState = twitchService.getLiveState(guildId);
         if (liveState.liveContestActive) return;
         await twitchService.checkTwitchLive(
-            client, guildId, twitchUsername,
+            client, guildId, usernameToUse,
             async () => { await processLivePhrases(client, guildId).catch(console.error); }
         ).catch(console.error);
     }, config.TWITCH_AUTO_SCAN_INTERVAL_MS);
 }
 
-function startTwitchLiveEndScan(guildId, twitchUsername) {
+function startTwitchLiveEndScan(guildId, usernameToUse) {
     setInterval(async () => {
         const liveState = twitchService.getLiveState(guildId);
         if (!liveState.liveContestActive) return;
         await twitchService.checkTwitchLive(
-            client, guildId, twitchUsername,
+            client, guildId, usernameToUse,
             async () => { await processLivePhrases(client, guildId).catch(console.error); },
             async () => { await handleLiveEndAuto(guildId); }
         ).catch(console.error);
@@ -229,8 +218,8 @@ function startTwitchLiveEndScan(guildId, twitchUsername) {
 
 async function startTwitchForGuild(guildId) {
     const settings = await db.getServerSettings(guildId).catch(() => null);
-    const twitchUsername = settings?.twitch_username || config.TWITCH_USERNAME;
-    if (!twitchUsername) return;
+    const usernameToUse = settings?.twitch_username || config.TWITCH_USERNAME;
+    if (!usernameToUse) return;
 
     // Déconnecter l'ancien chat si existant
     const existing = activeTwitchChats.get(guildId);
@@ -238,14 +227,14 @@ async function startTwitchForGuild(guildId) {
         existing.disconnect().catch(() => null);
     }
 
-    const twitchChat = twitchService.createTwitchChat(client, guildId, twitchUsername, sendContestLog);
+    const twitchChat = twitchService.createTwitchChat(client, guildId, usernameToUse, sendContestLog);
     twitchChat.connect().catch(error => {
         console.error(`❌ [${guildId}] Erreur connexion Twitch chat:`, error.message);
     });
 
     activeTwitchChats.set(guildId, twitchChat);
-    startTwitchAutoScan(guildId, twitchUsername);
-    startTwitchLiveEndScan(guildId, twitchUsername);
+    startTwitchAutoScan(guildId, usernameToUse);
+    startTwitchLiveEndScan(guildId, usernameToUse);
 }
 
 // ============================================================
