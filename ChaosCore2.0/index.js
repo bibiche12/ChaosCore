@@ -1,10 +1,6 @@
 require('dotenv').config();
 const { fetchConfiguredChannel } = require('./src/utils/serverSettings');
 
-// ============================================================
-// IMPORTS
-// ============================================================
-
 const path = require('path');
 const express = require('express');
 
@@ -24,27 +20,10 @@ const config = require('./src/config');
 const db = require('./src/db/queries');
 const twitchService = require('./src/services/twitch');
 
-const {
-    setupShop,
-    processLivePhrases,
-} = require('./src/services/shop');
-
-const {
-    handleCommand,
-    commandDefinitions,
-} = require('./src/handlers/commands');
-
-const {
-    handleButton,
-    handleModal,
-    handleSelectMenu,
-    pendingEmojiRequests,
-} = require('./src/handlers/buttons');
-
-const {
-    handleMessage,
-    restoreDisboardReminder,
-} = require('./src/handlers/messages');
+const { setupShop, processLivePhrases } = require('./src/services/shop');
+const { handleCommand, commandDefinitions } = require('./src/handlers/commands');
+const { handleButton, handleModal, handleSelectMenu, pendingEmojiRequests } = require('./src/handlers/buttons');
+const { handleMessage, restoreDisboardReminder } = require('./src/handlers/messages');
 const { startBirthdayJob } = require('./src/services/birthdayService');
 
 // ============================================================
@@ -59,16 +38,8 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessageReactions,
     ],
-    partials: [
-        Partials.Message,
-        Partials.Channel,
-        Partials.Reaction,
-    ],
+    partials: [Partials.Message, Partials.Channel, Partials.Reaction],
 });
-
-// ============================================================
-// VARIABLES GLOBALES
-// ============================================================
 
 const recentJoinsByGuild = new Map();
 function getRecentJoins(guildId) {
@@ -76,7 +47,6 @@ function getRecentJoins(guildId) {
     return recentJoinsByGuild.get(guildId);
 }
 
-// Garde une référence aux chats Twitch actifs par guild
 const activeTwitchChats = new Map();
 
 // ============================================================
@@ -84,32 +54,22 @@ const activeTwitchChats = new Map();
 // ============================================================
 
 async function sendOnboardingLog(message) {
-    const channel = await client.channels
-        .fetch(config.ONBOARDING_LOG_CHANNEL_ID)
-        .catch(() => null);
+    const channel = await client.channels.fetch(config.ONBOARDING_LOG_CHANNEL_ID).catch(() => null);
     if (channel) await channel.send(message).catch(console.error);
 }
 
 async function sendModLog(message) {
-    const channel = await client.channels
-        .fetch(config.MOD_LOG_CHANNEL_ID)
-        .catch(() => null);
+    const channel = await client.channels.fetch(config.MOD_LOG_CHANNEL_ID).catch(() => null);
     if (channel) await channel.send(message).catch(console.error);
 }
 
 async function sendLog(message, guildId) {
-    const channel = await fetchConfiguredChannel(
-        client, guildId || process.env.GUILD_ID,
-        'log_channel_id', config.LOG_CHANNEL_ID
-    );
+    const channel = await fetchConfiguredChannel(client, guildId || process.env.GUILD_ID, 'log_channel_id', config.LOG_CHANNEL_ID);
     if (channel) await channel.send(message).catch(console.error);
 }
 
 async function sendContestLog(message, guildId) {
-    const channel = await fetchConfiguredChannel(
-        client, guildId || process.env.GUILD_ID,
-        'contest_log_channel_id', config.CONTEST_LOG_CHANNEL_ID
-    );
+    const channel = await fetchConfiguredChannel(client, guildId || process.env.GUILD_ID, 'contest_log_channel_id', config.CONTEST_LOG_CHANNEL_ID);
     if (channel) await channel.send(message).catch(console.error);
 }
 
@@ -145,15 +105,26 @@ async function handleMonthlyBonus() {
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
     for (const [guildId] of client.guilds.cache) {
-    const settings = await db.getServerSettings(guildId).catch(() => null);
-    const usernameToUse = settings?.twitch_username;
+        try {
+            const alreadyGiven = await db.hasMonthlyBonusBeenGiven(guildId, monthKey);
+            if (alreadyGiven) continue;
 
-    // Ne démarre Twitch que si le serveur a configuré son propre username
-    // OU si c'est le guild principal
-    if (!usernameToUse && guildId !== process.env.GUILD_ID) continue;
+            const usersCount = await db.giveMonthlyBonus(guildId, config.MONTHLY_BONUS);
+            await db.markMonthlyBonusGiven(guildId, monthKey, usersCount);
 
-    const usernameToUse = usernameToUse || config.TWITCH_USERNAME;
-    ...
+            await sendLog(
+                `🎁 **Bonus mensuel distribué**\n\n` +
+                `💰 Montant : **${config.MONTHLY_BONUS} ${config.MONEY_NAME}s**\n` +
+                `👥 Membres crédités : **${usersCount}**\n` +
+                `📅 Mois : **${monthKey}**`,
+                guildId
+            ).catch(() => null);
+
+            console.log(`🎁 [${guildId}] Bonus mensuel ${monthKey} → ${usersCount} membres`);
+        } catch (err) {
+            console.error(`❌ handleMonthlyBonus [${guildId}]:`, err.message);
+        }
+    }
 }
 
 // ============================================================
@@ -191,25 +162,25 @@ async function handleLiveEndAuto(guildId) {
     console.log(`⚫ [${guildId}] Fin de live détectée automatiquement`);
 }
 
-function startTwitchAutoScan(guildId, usernameToUse) {
+function startTwitchAutoScan(guildId, twitchUsername) {
     setInterval(async () => {
         if (!config.TWITCH_AUTO_SCAN_ENABLED) return;
         if (!isInAutoScanWindow()) return;
         const liveState = twitchService.getLiveState(guildId);
         if (liveState.liveContestActive) return;
         await twitchService.checkTwitchLive(
-            client, guildId, usernameToUse,
+            client, guildId, twitchUsername,
             async () => { await processLivePhrases(client, guildId).catch(console.error); }
         ).catch(console.error);
     }, config.TWITCH_AUTO_SCAN_INTERVAL_MS);
 }
 
-function startTwitchLiveEndScan(guildId, usernameToUse) {
+function startTwitchLiveEndScan(guildId, twitchUsername) {
     setInterval(async () => {
         const liveState = twitchService.getLiveState(guildId);
         if (!liveState.liveContestActive) return;
         await twitchService.checkTwitchLive(
-            client, guildId, usernameToUse,
+            client, guildId, twitchUsername,
             async () => { await processLivePhrases(client, guildId).catch(console.error); },
             async () => { await handleLiveEndAuto(guildId); }
         ).catch(console.error);
@@ -218,14 +189,17 @@ function startTwitchLiveEndScan(guildId, usernameToUse) {
 
 async function startTwitchForGuild(guildId) {
     const settings = await db.getServerSettings(guildId).catch(() => null);
-    const usernameToUse = settings?.twitch_username || config.TWITCH_USERNAME;
+    const twitchUsername = settings?.twitch_username;
+
+    // Ne démarre Twitch que si le serveur a son propre username OU si c'est le guild principal
+    if (!twitchUsername && guildId !== process.env.GUILD_ID) return;
+
+    const usernameToUse = twitchUsername || config.TWITCH_USERNAME;
     if (!usernameToUse) return;
 
     // Déconnecter l'ancien chat si existant
     const existing = activeTwitchChats.get(guildId);
-    if (existing) {
-        existing.disconnect().catch(() => null);
-    }
+    if (existing) existing.disconnect().catch(() => null);
 
     const twitchChat = twitchService.createTwitchChat(client, guildId, usernameToUse, sendContestLog);
     twitchChat.connect().catch(error => {
@@ -348,11 +322,9 @@ async function triggerRaidAlert(guildId, members) {
 client.on('guildMemberAdd', async (member) => {
     try {
         await member.roles.add(config.ROLE_ETAPE_1_ID);
-
         const guildId = member.guild.id;
         const recentJoins = getRecentJoins(guildId);
         const now = Date.now();
-
         recentJoins.push({ member, timestamp: now });
         while (recentJoins.length && now - recentJoins[0].timestamp > config.ANTI_RAID_WINDOW_MS) {
             recentJoins.shift();
@@ -360,13 +332,11 @@ client.on('guildMemberAdd', async (member) => {
         if (recentJoins.length >= config.ANTI_RAID_THRESHOLD) {
             await triggerRaidAlert(guildId, recentJoins.map(entry => entry.member));
         }
-
         await sendOnboardingLog(
             `👋 **Nouveau membre arrivé**\n\n` +
             `👤 Membre : ${member}\n` +
             `🧩 Rôle ajouté : <@&${config.ROLE_ETAPE_1_ID}>`
         ).catch(() => null);
-
         console.log(`👋 Nouveau membre : ${member.user.tag} → Étape 1`);
     } catch (error) {
         console.error('❌ Erreur guildMemberAdd onboarding:', error.message);
@@ -380,18 +350,14 @@ client.on('messageReactionAdd', async (reaction, user) => {
         if (reaction.partial) await reaction.fetch().catch(() => null);
         if (!reaction.message || reaction.message.id !== config.REGLEMENT_MESSAGE_ID) return;
         if (reaction.emoji.name !== config.REGLEMENT_EMOJI_NAME) return;
-
         const guild = reaction.message.guild;
         if (!guild) return;
-
         const member = await guild.members.fetch(user.id).catch(() => null);
         if (!member) return;
         if (!member.roles.cache.has(config.ROLE_ETAPE_1_ID)) return;
-
         await member.roles.remove(config.ROLE_ETAPE_1_ID).catch(() => null);
         await member.roles.add(config.ROLE_ETAPE_2_ID);
         await sendAgeChoiceMessage(member);
-
         await sendOnboardingLog(
             `✅ **Règlement accepté**\n\n` +
             `👤 Membre : ${member}\n` +
@@ -406,12 +372,10 @@ client.on('messageReactionAdd', async (reaction, user) => {
 async function sendAgeChoiceMessage(member) {
     const rolesChannel = await client.channels.fetch(config.SALON_ROLES_ID).catch(() => null);
     if (!rolesChannel) return;
-
     const ageButtons = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('onboarding_age_minor').setLabel('Mineur').setEmoji('🔞').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('onboarding_age_adult').setLabel('Majeur').setEmoji('✅').setStyle(ButtonStyle.Success)
     );
-
     await rolesChannel.send({
         content:
             `🦌 Bienvenue ${member} !\n\n` +
@@ -441,7 +405,6 @@ client.on('guildMemberRemove', async (member) => {
 const app = express();
 app.use(express.json());
 
-// Middleware de sécurité pour l'API interne
 function requireApiKey(req, res, next) {
     const key = req.headers['x-api-key'];
     if (!key || key !== process.env.INTERNAL_API_KEY) {
@@ -449,8 +412,6 @@ function requireApiKey(req, res, next) {
     }
     next();
 }
-
-// ── OVERLAY ──────────────────────────────────────────────────
 
 app.get('/overlay-view', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'overlay.html'));
@@ -481,18 +442,12 @@ app.get('/overlay/latest', async (req, res) => {
 
 app.get('/test', (req, res) => res.send('TEST OK ✅'));
 
-// ── API INTERNE (appelée par le dashboard) ───────────────────
-
-// Recharge les settings d'un guild (salons de log, rôles, etc.)
 app.post('/api/settings/reload/:guildId', requireApiKey, async (req, res) => {
     const { guildId } = req.params;
     console.log(`🔄 [${guildId}] Rechargement des settings depuis le dashboard`);
-    // Les settings sont lus depuis la DB à chaque utilisation, donc rien à faire ici
-    // Sauf si le username Twitch a changé — dans ce cas on redémarre le chat
     res.json({ ok: true, message: 'Settings rechargés' });
 });
 
-// Redémarre le scan Twitch pour un guild (si le username a changé)
 app.post('/api/twitch/restart/:guildId', requireApiKey, async (req, res) => {
     const { guildId } = req.params;
     console.log(`🔄 [${guildId}] Redémarrage Twitch depuis le dashboard`);
@@ -505,15 +460,10 @@ app.post('/api/twitch/restart/:guildId', requireApiKey, async (req, res) => {
     }
 });
 
-// Envoie un message dans un salon Discord (utile pour tester depuis le dashboard)
 app.post('/api/message/:guildId', requireApiKey, async (req, res) => {
     const { guildId } = req.params;
     const { channelId, content } = req.body;
-
-    if (!channelId || !content) {
-        return res.status(400).json({ error: 'channelId et content requis' });
-    }
-
+    if (!channelId || !content) return res.status(400).json({ error: 'channelId et content requis' });
     try {
         const channel = await client.channels.fetch(channelId).catch(() => null);
         if (!channel) return res.status(404).json({ error: 'Salon introuvable' });
@@ -523,8 +473,6 @@ app.post('/api/message/:guildId', requireApiKey, async (req, res) => {
         res.status(500).json({ ok: false, error: err.message });
     }
 });
-
-// ── DÉMARRAGE ────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
