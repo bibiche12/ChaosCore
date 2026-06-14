@@ -22,77 +22,61 @@ const { REWARDS } = require('./twitch/rewards');
 // ============================================================
 
 let socket = null;
-
-let liveContestActive = false;
-let twitchWasLive = false;
-
 let appAccessToken = null;
 let appAccessTokenExpiresAt = 0;
 
-let currentLive = {
-    startedAt: null,
-    users: {},
-};
-
-let liveStats = {
-    vies: 0,
-    morts: 0,
-    fails: 0,
-    peurs: 0,
-    karma: 0,
-};
-
-const twitchCooldowns = new Map();
+const guildStates = new Map();
+function getGuildState(guildId) {
+    if (!guildStates.has(guildId)) {
+        guildStates.set(guildId, {
+            liveContestActive: false,
+            twitchWasLive: false,
+            currentLive: { startedAt: null, users: {} },
+            liveStats: { vies: 0, morts: 0, fails: 0, peurs: 0, karma: 0 },
+            cooldowns: new Map(),
+        });
+    }
+    return guildStates.get(guildId);
+}
 
 // ============================================================
 // GETTERS / SETTERS LIVE
 // ============================================================
 
-function getLiveState() {
-    return {
-        liveContestActive,
-        currentLive,
-        liveStats,
-    };
+function getLiveState(guildId) {
+    const s = getGuildState(guildId);
+    return { liveContestActive: s.liveContestActive, currentLive: s.currentLive, liveStats: s.liveStats };
 }
 
-function getLiveStats() {
-    return liveStats;
+function getLiveStats(guildId) {
+    return getGuildState(guildId).liveStats;
 }
 
-function setLiveActive(value) {
-    liveContestActive = value;
+function setLiveActive(guildId, value) {
+    getGuildState(guildId).liveContestActive = value;
 }
 
-function resetLiveStats() {
-    liveStats = {
-        vies: 0,
-        morts: 0,
-        fails: 0,
-        peurs: 0,
-        karma: 0,
-    };
+function resetLiveStats(guildId) {
+    getGuildState(guildId).liveStats = { vies: 0, morts: 0, fails: 0, peurs: 0, karma: 0 };
 }
 
-function resetCurrentLive() {
-    currentLive = {
-        startedAt: new Date().toISOString(),
-        users: {},
-    };
-
-    resetLiveStats();
-    twitchCooldowns.clear();
+function resetCurrentLive(guildId) {
+    const s = getGuildState(guildId);
+    s.currentLive = { startedAt: new Date().toISOString(), users: {} };
+    s.liveStats = { vies: 0, morts: 0, fails: 0, peurs: 0, karma: 0 };
+    s.cooldowns.clear();
 }
 
-function stopCurrentLive() {
-    liveContestActive = false;
+function stopCurrentLive(guildId) {
+    getGuildState(guildId).liveContestActive = false;
 }
 
 // ============================================================
 // RÉSUMÉ LIVE
 // ============================================================
 
-function generateLiveStatsSummary(participants = 0) {
+function generateLiveStatsSummary(guildId, participants = 0) {
+    const liveStats = getGuildState(guildId).liveStats;
     return (
         `📊 **Résumé du live**\n\n` +
         `❤️ Vies : **${liveStats.vies}**\n` +
@@ -569,13 +553,13 @@ async function handleTwitchTicketMessage(
     twitchName
 ) {
     const now = Date.now();
-    const last = twitchCooldowns.get(twitchName) || 0;
+    const last = getGuildState(guildId).cooldowns.get(twitchName) || 0;
 
     if (now - last < config.TWITCH_MESSAGE_COOLDOWN_MS) {
         return;
     }
 
-    twitchCooldowns.set(twitchName, now);
+    getGuildState(guildId).cooldowns.set(twitchName, now);
 
     const discordId = await db.getDiscordIdFromTwitch(twitchName);
 
@@ -717,6 +701,7 @@ async function checkTwitchLive(discordClient, onLiveStart, onLiveEnd) {
 
         return handleTwitchLiveStart(
             discordClient,
+            guildId,
             stream,
             onLiveStart
         );
@@ -754,16 +739,17 @@ async function fetchCurrentTwitchStream() {
     return response.data.data[0];
 }
 
-async function handleTwitchOffline(onLiveEnd) {
-    if (twitchWasLive || liveContestActive) {
+async function handleTwitchOffline(guildId, onLiveEnd) {
+    const s = getGuildState(guildId);
+    if (s.twitchWasLive || s.liveContestActive) {
         console.log('⚫ Twitch est passé hors ligne');
 
-        twitchWasLive = false;
+        s.twitchWasLive = false;
 
         if (typeof onLiveEnd === 'function') {
             await onLiveEnd();
         } else {
-            liveContestActive = false;
+            s.liveContestActive = false;
         }
 
         return {
@@ -782,15 +768,17 @@ async function handleTwitchOffline(onLiveEnd) {
 
 async function handleTwitchLiveStart(
     discordClient,
+    guildId,
     stream,
     onLiveStart
 ) {
-    twitchWasLive = true;
-    liveContestActive = true;
+    const s = getGuildState(guildId);
+    s.twitchWasLive = true;
+    s.liveContestActive = true;
 
-    resetCurrentLive();
+    resetCurrentLive(guildId);
 
-    await sendLiveAnnouncement(discordClient, stream);
+    await sendLiveAnnouncement(discordClient, guildId, stream);
 
     console.log('🔴 Live Twitch détecté automatiquement');
 
@@ -805,27 +793,26 @@ async function handleTwitchLiveStart(
     };
 }
 
-async function sendLiveAnnouncement(discordClient, stream) {
-    const channel = await discordClient.channels
-        .fetch(config.LIVE_CHANNEL_ID)
-        .catch(() => null);
+async function sendLiveAnnouncement(discordClient, guildId, stream) {
+    const db = require('../db/queries');
+    const settings = await db.getServerSettings(guildId).catch(() => null);
+    const liveChannelId  = settings?.live_channel_id || config.LIVE_CHANNEL_ID;
+    const liveRoleId     = settings?.live_role_id    || config.LIVE_ROLE_ID;
+    const twitchUsername = settings?.twitch_username || config.TWITCH_USERNAME;
 
-    if (!channel) {
-        return;
-    }
+    const channel = await discordClient.channels.fetch(liveChannelId).catch(() => null);
+    if (!channel) return;
 
     await channel.send({
         content:
             `🔴 **BLACK&CO' EST EN LIVE** 🔴\n\n` +
-            `<@&${config.LIVE_ROLE_ID}>\n\n` +
+            `<@&${liveRoleId}>\n\n` +
             `Le chaos commence maintenant 😈\n\n` +
             `🎮 Jeu : ${stream.game_name || 'Non renseigné'}\n` +
             `📢 Titre : ${stream.title || 'Live en cours'}\n` +
-            `📺 https://www.twitch.tv/${config.TWITCH_USERNAME}\n\n` +
+            `📺 https://www.twitch.tv/${twitchUsername}\n\n` +
             `La bibiche a sonné l'alarme 🦌🔥`,
-        allowedMentions: {
-            parse: ['roles'],
-        },
+        allowedMentions: { parse: ['roles'] },
     }).catch(console.error);
 }
 

@@ -1,4 +1,5 @@
 require('dotenv').config();
+const { fetchConfiguredChannel } = require('./src/utils/serverSettings');
 
 // ============================================================
 // IMPORTS
@@ -70,7 +71,11 @@ const client = new Client({
 // VARIABLES GLOBALES
 // ============================================================
 
-const recentJoins = [];
+const recentJoinsByGuild = new Map();
+function getRecentJoins(guildId) {
+    if (!recentJoinsByGuild.has(guildId)) recentJoinsByGuild.set(guildId, []);
+    return recentJoinsByGuild.get(guildId);
+}
 
 // ============================================================
 // LOGS
@@ -155,34 +160,31 @@ async function cleanExpiredRoles() {
 
 async function handleMonthlyBonus() {
     const now = new Date();
+    if (now.getDate() !== 1) return;
 
-    if (now.getDate() !== 1) {
-        return;
+    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    for (const [guildId] of client.guilds.cache) {
+        try {
+            const alreadyGiven = await db.hasMonthlyBonusBeenGiven(guildId, monthKey);
+            if (alreadyGiven) continue;
+
+            const usersCount = await db.giveMonthlyBonus(guildId, config.MONTHLY_BONUS);
+            await db.markMonthlyBonusGiven(guildId, monthKey, usersCount);
+
+            await sendLog(
+                `🎁 **Bonus mensuel distribué**\n\n` +
+                `💰 Montant : **${config.MONTHLY_BONUS} Bichcoins**\n` +
+                `👥 Membres crédités : **${usersCount}**\n` +
+                `📅 Mois : **${monthKey}**`,
+                guildId
+            ).catch(() => null);
+
+            console.log(`🎁 [${guildId}] Bonus mensuel ${monthKey} → ${usersCount} membres`);
+        } catch (err) {
+            console.error(`❌ handleMonthlyBonus [${guildId}]:`, err.message);
+        }
     }
-
-    const monthKey =
-        `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-    const alreadyGiven = await db.hasMonthlyBonusBeenGiven(monthKey);
-
-    if (alreadyGiven) {
-        return;
-    }
-
-    const usersCount = await db.giveMonthlyBonus(config.MONTHLY_BONUS);
-
-    await db.markMonthlyBonusGiven(monthKey, usersCount);
-
-    await sendLog(
-        `🎁 **Bonus mensuel distribué**\n\n` +
-        `💰 Montant : **${config.MONTHLY_BONUS} Bichcoins**\n` +
-        `👥 Membres crédités : **${usersCount}**\n` +
-        `📅 Mois : **${monthKey}**`
-    ).catch(() => null);
-
-    console.log(
-        `🎁 Bonus mensuel ${monthKey} distribué à ${usersCount} membres`
-    );
 }
 
 // ============================================================
@@ -199,10 +201,7 @@ async function registerCommands() {
         .setToken(process.env.DISCORD_TOKEN);
 
     await rest.put(
-        Routes.applicationGuildCommands(
-            process.env.CLIENT_ID,
-            process.env.GUILD_ID
-        ),
+        Routes.applicationCommands(process.env.CLIENT_ID),
         {
             body: commandDefinitions,
         }
@@ -231,59 +230,36 @@ function isInAutoScanWindow() {
     );
 }
 
-async function handleLiveEndAuto() {
-    const liveState = twitchService.getLiveState();
-
-    const participants = Object.keys(
-        liveState.currentLive.users || {}
-    ).length;
-
-    const summary = twitchService.generateLiveStatsSummary(participants);
-
-    twitchService.stopCurrentLive();
-
-    await sendContestLog(
-        `⚫ **Live terminé automatiquement**\n\n` +
-        summary
-    ).catch(() => null);
-
-    console.log('⚫ Fin de live détectée automatiquement');
+async function handleLiveEndAuto(guildId) {
+    const liveState = twitchService.getLiveState(guildId);
+    const participants = Object.keys(liveState.currentLive.users || {}).length;
+    const summary = twitchService.generateLiveStatsSummary(guildId, participants);
+    twitchService.stopCurrentLive(guildId);
+    await sendContestLog(`⚫ **Live terminé automatiquement**\n\n` + summary, guildId).catch(() => null);
+    console.log(`⚫ [${guildId}] Fin de live détectée automatiquement`);
 }
 
-function startTwitchAutoScan() {
-    setInterval(() => {
+function startTwitchAutoScan(guildId, twitchUsername) {
+    setInterval(async () => {
         if (!config.TWITCH_AUTO_SCAN_ENABLED) return;
         if (!isInAutoScanWindow()) return;
-
-        const liveState = twitchService.getLiveState();
-
-        if (liveState.liveContestActive) {
-            return;
-        }
-
-        twitchService.checkTwitchLive(
-            client,
-            async () => {
-                await processLivePhrases(client).catch(console.error);
-            }
+        const liveState = twitchService.getLiveState(guildId);
+        if (liveState.liveContestActive) return;
+        await twitchService.checkTwitchLive(
+            client, guildId, twitchUsername,
+            async () => { await processLivePhrases(client, guildId).catch(console.error); }
         ).catch(console.error);
     }, config.TWITCH_AUTO_SCAN_INTERVAL_MS);
 }
 
-function startTwitchLiveEndScan() {
-    setInterval(() => {
-        const liveState = twitchService.getLiveState();
-
-        if (!liveState.liveContestActive) {
-            return;
-        }
-
-        twitchService.checkTwitchLive(
-            client,
-            async () => {
-                await processLivePhrases(client).catch(console.error);
-            },
-            handleLiveEndAuto
+function startTwitchLiveEndScan(guildId, twitchUsername) {
+    setInterval(async () => {
+        const liveState = twitchService.getLiveState(guildId);
+        if (!liveState.liveContestActive) return;
+        await twitchService.checkTwitchLive(
+            client, guildId, twitchUsername,
+            async () => { await processLivePhrases(client, guildId).catch(console.error); },
+            async () => { await handleLiveEndAuto(guildId); }
         ).catch(console.error);
     }, config.TWITCH_LIVE_END_SCAN_INTERVAL_MS);
 }
@@ -300,20 +276,19 @@ client.once('clientReady', async () => {
     await restoreDisboardReminder(client);
     
 
-    const twitchChat = twitchService.createTwitchChat(
-        client,
-        sendContestLog
-    );
+    for (const [guildId] of client.guilds.cache) {
+        const settings = await db.getServerSettings(guildId).catch(() => null);
+        const twitchUsername = settings?.twitch_username || config.TWITCH_USERNAME;
+        if (!twitchUsername) continue;
 
-    twitchChat.connect().catch(error => {
-        console.error(
-            '❌ Erreur connexion Twitch chat:',
-            error.message
-        );
-    });
+        const twitchChat = twitchService.createTwitchChat(client, guildId, twitchUsername, sendContestLog);
+        twitchChat.connect().catch(error => {
+            console.error(`❌ [${guildId}] Erreur connexion Twitch chat:`, error.message);
+        });
 
-    startTwitchAutoScan();
-    startTwitchLiveEndScan();
+        startTwitchAutoScan(guildId, twitchUsername);
+        startTwitchLiveEndScan(guildId, twitchUsername);
+    }
 
     setInterval(cleanExpiredRoles, 10 * 60 * 1000);
     cleanExpiredRoles();
@@ -487,16 +462,12 @@ app.get('/test', (req, res) => {
 // ANTI-RAID
 // ============================================================
 
-async function triggerRaidAlert(members) {
-    if (security.isRaidMode()) {
-        return;
-    }
+async function triggerRaidAlert(guildId, members) {
+    if (security.isRaidMode(guildId)) return;
 
-    security.enableRaidMode();
+    security.enableRaidMode(guildId);
 
-    const channel = await client.channels
-        .fetch(config.SECURITY_LOG_CHANNEL_ID)
-        .catch(() => null);
+    const channel = await fetchConfiguredChannel(client, guildId, 'security_log_channel_id', config.SECURITY_LOG_CHANNEL_ID).catch(() => null);
 
     if (!channel) {
         return;
@@ -510,7 +481,7 @@ async function triggerRaidAlert(members) {
         members.map(member => `• ${member.user.tag}`).join('\n')
     ).catch(() => null);
 
-    console.log('🚨 MODE RAID ACTIVÉ');
+    console.log(`🚨 [${guildId}] MODE RAID ACTIVÉ`);
 }
 
 // ============================================================
@@ -521,24 +492,18 @@ client.on('guildMemberAdd', async (member) => {
     try {
         await member.roles.add(config.ROLE_ETAPE_1_ID);
 
+        const guildId = member.guild.id;
+        const recentJoins = getRecentJoins(guildId);
         const now = Date.now();
 
-        recentJoins.push({
-            member,
-            timestamp: now,
-        });
+        recentJoins.push({ member, timestamp: now });
 
-        while (
-            recentJoins.length &&
-            now - recentJoins[0].timestamp > config.ANTI_RAID_WINDOW_MS
-        ) {
+        while (recentJoins.length && now - recentJoins[0].timestamp > config.ANTI_RAID_WINDOW_MS) {
             recentJoins.shift();
         }
 
         if (recentJoins.length >= config.ANTI_RAID_THRESHOLD) {
-            await triggerRaidAlert(
-                recentJoins.map(entry => entry.member)
-            );
+            await triggerRaidAlert(guildId, recentJoins.map(entry => entry.member));
         }
 
         await sendOnboardingLog(
@@ -568,7 +533,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
             return;
         }
 
-        if (security.isRaidMode()) {
+        if (security.isRaidMode(reaction.message?.guild?.id)) {
             return;
         }
 

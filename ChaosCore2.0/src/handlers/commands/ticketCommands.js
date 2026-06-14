@@ -63,7 +63,7 @@ async function handleTicketCommand(interaction, { sendContestLog }) {
 async function handleTicketsCommand(interaction) {
     await interaction.deferReply({ flags: 64 });
 
-    const ticketData = await db.getTicketUser(interaction.user.id);
+    const ticketData = await db.getTicketUser(interaction.guildId, interaction.user.id);
 
     await interaction.editReply({
         content:
@@ -89,7 +89,7 @@ async function handleAddTicketCommand(interaction, sendContestLog) {
     const target = interaction.options.getUser('membre');
     const amount = interaction.options.getInteger('montant');
 
-    await db.addTickets(target.id, amount, 'manual');
+    await db.addTickets(interaction.guildId, target.id, amount, 'manual');
 
     await sendContestLog(
         `🎟️ **Ajout manuel de Tickets**\n\n` +
@@ -117,7 +117,7 @@ async function handleRemoveTicketCommand(interaction, sendContestLog) {
     const target = interaction.options.getUser('membre');
     const amount = interaction.options.getInteger('montant');
 
-    await db.addTickets(target.id, -amount, 'manual');
+    await db.addTickets(interaction.guildId, target.id, -amount, 'manual');
 
     await sendContestLog(
         `🎟️ **Retrait manuel de Tickets**\n\n` +
@@ -138,7 +138,7 @@ async function handleRemoveTicketCommand(interaction, sendContestLog) {
 async function handleResumeCommand(interaction) {
     await interaction.deferReply();
 
-    const top = await db.getTopTickets(20);
+    const top = await db.getTopTickets(interaction.guildId, 20);
 
     if (top.length === 0) {
         await interaction.editReply(

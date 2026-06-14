@@ -202,6 +202,7 @@ async function handleConfirmRolePurchase(interaction, discordClient) {
     }
 
     const requestId = await db.insertShopRequest(
+        interaction.guildId,
         user.id,
         'role',
         JSON.stringify({
@@ -560,6 +561,7 @@ async function handleGageModal(interaction, discordClient) {
     );
 
     const requestId = await db.insertShopRequest(
+        interaction.guildId,
         user.id,
         'gage',
         gageText,
@@ -607,6 +609,7 @@ async function handlePhraseModal(interaction, discordClient) {
     }
 
     const requestId = await db.insertShopRequest(
+        interaction.guildId,
         user.id,
         'phrase',
         JSON.stringify({

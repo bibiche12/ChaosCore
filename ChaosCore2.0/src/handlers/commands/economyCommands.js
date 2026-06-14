@@ -63,7 +63,7 @@ async function handleEconomyCommand(interaction, { sendLog }) {
 async function handleBalanceCommand(interaction) {
     await interaction.deferReply({ flags: 64 });
 
-    const userData = await db.getUserPoints(interaction.user.id);
+    const userData = await db.getUserPoints(interaction.guildId, interaction.user.id);
 
     await interaction.editReply({
         content:
@@ -79,8 +79,8 @@ async function handleBalanceCommand(interaction) {
 async function handleProfileCommand(interaction) {
     await interaction.deferReply({ flags: 64 });
 
-    const points = await db.getUserPoints(interaction.user.id);
-    const tickets = await db.getTicketUser(interaction.user.id);
+    const points = await db.getUserPoints(interaction.guildId, interaction.user.id);
+    const tickets = await db.getTicketUser(interaction.guildId, interaction.user.id);
 
     await interaction.editReply({
         content:
@@ -107,7 +107,7 @@ async function handleAddPointsCommand(interaction, sendLog) {
     const target = interaction.options.getUser('membre');
     const amount = interaction.options.getInteger('montant');
 
-    const newBalance = await db.addPoints(target.id, amount);
+    const newBalance = await db.addPoints(interaction.guildId, target.id, amount);
 
     await sendLog(
         `🏦 **Ajout de Bichcoins**\n\n` +
@@ -137,7 +137,7 @@ async function handleRemovePointsCommand(interaction, sendLog) {
     const target = interaction.options.getUser('membre');
     const amount = interaction.options.getInteger('montant');
 
-    const newBalance = await db.addPoints(target.id, -amount);
+    const newBalance = await db.addPoints(interaction.guildId, target.id, -amount);
 
     await sendLog(
         `🏦 **Retrait de Bichcoins**\n\n` +

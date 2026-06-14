@@ -86,7 +86,7 @@ async function handleRaidOffCommand(interaction, discordClient) {
         return;
     }
 
-    security.disableRaidMode();
+    security.disableRaidMode(interaction.guildId);
 
     const securityChannel = await discordClient.channels
         .fetch(config.SECURITY_LOG_CHANNEL_ID)
@@ -121,8 +121,14 @@ async function handleScanCommand(
 
     await interaction.deferReply({ flags: 64 });
 
+    const guildId = interaction.guildId;
+    const dbMod = require('../../db/queries');
+    const settings = await dbMod.getServerSettings(guildId).catch(() => null);
+    const twitchUsername = settings?.twitch_username || config.TWITCH_USERNAME;
     const result = await twitchService.checkTwitchLive(
         discordClient,
+        guildId,
+        twitchUsername,
         async () => {
             if (typeof processLivePhrases === 'function') {
                 await processLivePhrases(discordClient).catch(console.error);
@@ -164,7 +170,7 @@ async function handleLiveStartCommand(
         return;
     }
 
-    const liveState = twitchService.getLiveState();
+    const liveState = twitchService.getLiveState(interaction.guildId);
 
     if (liveState.liveContestActive) {
         await interaction.reply({
@@ -175,8 +181,8 @@ async function handleLiveStartCommand(
         return;
     }
 
-    twitchService.setLiveActive(true);
-    twitchService.resetCurrentLive();
+    twitchService.setLiveActive(interaction.guildId, true);
+    twitchService.resetCurrentLive(interaction.guildId);
 
     await interaction.reply(
         '🔴 Comptage Tickets du Chaos activé pour le live.'
@@ -202,7 +208,7 @@ async function handleLiveStopCommand(
         return;
     }
 
-    const liveState = twitchService.getLiveState();
+    const liveState = twitchService.getLiveState(interaction.guildId);
 
     if (!liveState.liveContestActive) {
         await interaction.reply({
@@ -217,9 +223,9 @@ async function handleLiveStopCommand(
         liveState.currentLive.users || {}
     ).length;
 
-    const summary = twitchService.generateLiveStatsSummary(participants);
+    const summary = twitchService.generateLiveStatsSummary(interaction.guildId, participants);
 
-    twitchService.stopCurrentLive();
+    twitchService.stopCurrentLive(interaction.guildId);
 
     await interaction.reply(
         `⚫ Comptage Tickets du Chaos arrêté. ` +

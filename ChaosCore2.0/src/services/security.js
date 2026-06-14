@@ -1,35 +1,5 @@
-// ============================================================
-// ÉTAT GLOBAL DU MODE RAID
-// ============================================================
-
-let raidMode = false;
-
-// ============================================================
-// GETTERS
-// ============================================================
-
-function isRaidMode() {
-    return raidMode;
-}
-
-// ============================================================
-// ACTIONS
-// ============================================================
-
-function enableRaidMode() {
-    raidMode = true;
-}
-
-function disableRaidMode() {
-    raidMode = false;
-}
-
-// ============================================================
-// EXPORTS
-// ============================================================
-
-module.exports = {
-    isRaidMode,
-    enableRaidMode,
-    disableRaidMode,
-};
+const raidModes = new Map();
+function isRaidMode(guildId) { return raidModes.get(guildId) === true; }
+function enableRaidMode(guildId) { raidModes.set(guildId, true); }
+function disableRaidMode(guildId) { raidModes.set(guildId, false); }
+module.exports = { isRaidMode, enableRaidMode, disableRaidMode };

@@ -117,8 +117,8 @@ async function sendPhraseShopItem(shopChannel) {
 // PHRASES LIVE
 // ============================================================
 
-async function processLivePhrases(discordClient) {
-    const updatedPhrases = await db.decrementLivePhrases();
+async function processLivePhrases(discordClient, guildId) {
+    const updatedPhrases = await db.decrementLivePhrases(guildId);
 
     if (!updatedPhrases || updatedPhrases.length === 0) {
         return;

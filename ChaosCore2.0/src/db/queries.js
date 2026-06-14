@@ -36,33 +36,41 @@ async function initDatabase() {
 
     await pool.query(`
         CREATE TABLE IF NOT EXISTS monthly_bonus_log (
-            month_key TEXT PRIMARY KEY,
-            given_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            users_count INTEGER DEFAULT 0
+            guild_id  TEXT NOT NULL,
+            month_key TEXT NOT NULL,
+            given_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            users_count INTEGER DEFAULT 0,
+            PRIMARY KEY (guild_id, month_key)
         );
     `);
 
     await pool.query(`
         CREATE TABLE IF NOT EXISTS economy (
-            user_id TEXT PRIMARY KEY,
-            balance INTEGER NOT NULL DEFAULT 0
+            guild_id TEXT NOT NULL,
+            user_id  TEXT NOT NULL,
+            balance  INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (guild_id, user_id)
         );
     `);
 
     await pool.query(`
         CREATE TABLE IF NOT EXISTS tickets (
-            user_id TEXT PRIMARY KEY,
-            tickets INTEGER NOT NULL DEFAULT 0,
+            guild_id        TEXT NOT NULL,
+            user_id         TEXT NOT NULL,
+            tickets         INTEGER NOT NULL DEFAULT 0,
             twitch_messages INTEGER NOT NULL DEFAULT 0,
-            presences INTEGER NOT NULL DEFAULT 0,
-            manual INTEGER NOT NULL DEFAULT 0
+            presences       INTEGER NOT NULL DEFAULT 0,
+            manual          INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (guild_id, user_id)
         );
     `);
 
     await pool.query(`
         CREATE TABLE IF NOT EXISTS twitch_links (
-            twitch_name TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL
+            guild_id    TEXT NOT NULL,
+            twitch_name TEXT NOT NULL,
+            user_id     TEXT NOT NULL,
+            PRIMARY KEY (guild_id, twitch_name)
         );
     `);
 
@@ -85,6 +93,7 @@ async function initDatabase() {
     await pool.query(`
         CREATE TABLE IF NOT EXISTS shop_requests (
             id SERIAL PRIMARY KEY,
+            guild_id TEXT NOT NULL,
             user_id TEXT NOT NULL,
             type TEXT NOT NULL,
             content TEXT NOT NULL,
@@ -100,6 +109,7 @@ async function initDatabase() {
     await pool.query(`
         CREATE TABLE IF NOT EXISTS emoji_requests (
             id SERIAL PRIMARY KEY,
+            guild_id TEXT NOT NULL,
             user_id TEXT NOT NULL,
             emoji_name TEXT NOT NULL,
             image_url TEXT NOT NULL,
@@ -230,13 +240,45 @@ await pool.query(`
     );
 `);
 
-    console.log('✅ Connexion PostgreSQL prête');
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS server_settings (
+            guild_id                       TEXT PRIMARY KEY,
+            log_channel_id                 TEXT,
+            contest_log_channel_id         TEXT,
+            security_log_channel_id        TEXT,
+            moderation_channel_id          TEXT,
+            mod_log_channel_id             TEXT,
+            welcome_channel_id             TEXT,
+            goodbye_channel_id             TEXT,
+            birthday_channel_id            TEXT,
+            shop_channel_id                TEXT,
+            live_channel_id                TEXT,
+            live_role_id                   TEXT,
+            warning_role_id                TEXT,
+            warning_explanation_channel_id TEXT,
+            member_role_id                 TEXT,
+            trusted_role_id                TEXT,
+            minor_role_id                  TEXT,
+            adult_role_id                  TEXT,
+            step_1_role_id                 TEXT,
+            step_2_role_id                 TEXT,
+            chaos_child_role_id            TEXT,
+            onboarding_log_channel_id      TEXT,
+            disboard_channel_id            TEXT,
+            twitch_username                TEXT,
+            updated_at                     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    `);
+
+    console.log('✅ Base de données initialisée');
 }
 
 // ============================================================
 // MODULES DB
 // ============================================================
 
+const serverSettings = require('./modules/serverSettings')(pool);
 const economy = require('./modules/economy')(pool);
 const tickets = require('./modules/tickets')(pool);
 const twitch = require('./modules/twitch')(pool);
@@ -257,6 +299,7 @@ module.exports = {
     pool,
     initDatabase,
 
+    ...serverSettings,
     ...economy,
     ...tickets,
     ...twitch,

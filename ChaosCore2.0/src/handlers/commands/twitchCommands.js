@@ -73,7 +73,7 @@ async function handleTwitchLinkCommand(interaction, sendContestLog) {
         interaction.options.getString('pseudo')
     );
 
-    await db.setTwitchLink(pseudo, target.id);
+    await db.setTwitchLink(interaction.guildId, pseudo, target.id);
 
     await sendContestLog(
         `🔗 **Association Twitch**\n\n` +
@@ -98,7 +98,7 @@ async function handleTwitchLinksCommand(interaction) {
 
     await interaction.deferReply({ flags: 64 });
 
-    const links = await db.listTwitchLinks();
+    const links = await db.listTwitchLinks(interaction.guildId);
 
     if (links.length === 0) {
         await interaction.editReply(

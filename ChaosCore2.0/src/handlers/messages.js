@@ -162,6 +162,7 @@ async function handleEmojiUpload(
     }
 
     const requestId = await db.insertEmojiRequest(
+        message.guild.id,
         message.author.id,
         pending.emojiName,
         attachment.url
@@ -247,7 +248,7 @@ async function handleMoneyGain(message) {
 
     messageCooldowns.set(userId, now);
 
-    await db.addPoints(userId, config.POINTS_PER_MESSAGE);
+    await db.addPoints(message.guild.id, userId, config.POINTS_PER_MESSAGE);
 
     console.log(
         `💰 +${config.POINTS_PER_MESSAGE} ${config.MONEY_NAME} pour ${message.author.tag}`
