@@ -1,4 +1,5 @@
-node_modules
-.env
-/data
+ARCHIVES/
+ChaosCoreBeta/
 ChaosCore-Dashboard/
+ChaosCore2.0/.env
+ChaosCore2.0/.gitignore/

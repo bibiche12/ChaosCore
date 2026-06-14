@@ -46,7 +46,6 @@ const {
     restoreDisboardReminder,
 } = require('./src/handlers/messages');
 const { startBirthdayJob } = require('./src/services/birthdayService');
-// const { closeExpiredPolls } = require('./src/services/polls/pollService');
 
 // ============================================================
 // CLIENT DISCORD
@@ -77,6 +76,9 @@ function getRecentJoins(guildId) {
     return recentJoinsByGuild.get(guildId);
 }
 
+// Garde une référence aux chats Twitch actifs par guild
+const activeTwitchChats = new Map();
+
 // ============================================================
 // LOGS
 // ============================================================
@@ -85,40 +87,30 @@ async function sendOnboardingLog(message) {
     const channel = await client.channels
         .fetch(config.ONBOARDING_LOG_CHANNEL_ID)
         .catch(() => null);
-
-    if (channel) {
-        await channel.send(message).catch(console.error);
-    }
+    if (channel) await channel.send(message).catch(console.error);
 }
 
 async function sendModLog(message) {
     const channel = await client.channels
         .fetch(config.MOD_LOG_CHANNEL_ID)
         .catch(() => null);
-
-    if (channel) {
-        await channel.send(message).catch(console.error);
-    }
+    if (channel) await channel.send(message).catch(console.error);
 }
 
-async function sendLog(message) {
-    const channel = await client.channels
-        .fetch(config.LOG_CHANNEL_ID)
-        .catch(() => null);
-
-    if (channel) {
-        await channel.send(message).catch(console.error);
-    }
+async function sendLog(message, guildId) {
+    const channel = await fetchConfiguredChannel(
+        client, guildId || process.env.GUILD_ID,
+        'log_channel_id', config.LOG_CHANNEL_ID
+    );
+    if (channel) await channel.send(message).catch(console.error);
 }
 
-async function sendContestLog(message) {
-    const channel = await client.channels
-        .fetch(config.CONTEST_LOG_CHANNEL_ID)
-        .catch(() => null);
-
-    if (channel) {
-        await channel.send(message).catch(console.error);
-    }
+async function sendContestLog(message, guildId) {
+    const channel = await fetchConfiguredChannel(
+        client, guildId || process.env.GUILD_ID,
+        'contest_log_channel_id', config.CONTEST_LOG_CHANNEL_ID
+    );
+    if (channel) await channel.send(message).catch(console.error);
 }
 
 // ============================================================
@@ -127,29 +119,17 @@ async function sendContestLog(message) {
 
 async function cleanExpiredRoles() {
     const expiredRoles = await db.getExpiredTemporaryRoles();
-
     for (const row of expiredRoles) {
         try {
             const guild = await client.guilds.fetch(row.guild_id);
             const role = await guild.roles.fetch(row.role_id).catch(() => null);
             const member = await guild.members.fetch(row.user_id).catch(() => null);
-
-            if (role && member) {
-                await member.roles.remove(role).catch(() => null);
-            }
-
-            if (role) {
-                await role.delete('Rôle temporaire expiré').catch(() => null);
-            }
-
+            if (role && member) await member.roles.remove(role).catch(() => null);
+            if (role) await role.delete('Rôle temporaire expiré').catch(() => null);
             await db.deleteTemporaryRole(row.id);
-
             console.log(`🗑️ Rôle temporaire supprimé : ${row.role_name}`);
         } catch (error) {
-            console.error(
-                `❌ Erreur suppression rôle temporaire #${row.id}:`,
-                error
-            );
+            console.error(`❌ Erreur suppression rôle temporaire #${row.id}:`, error);
         }
     }
 }
@@ -174,7 +154,7 @@ async function handleMonthlyBonus() {
 
             await sendLog(
                 `🎁 **Bonus mensuel distribué**\n\n` +
-                `💰 Montant : **${config.MONTHLY_BONUS} Bichcoins**\n` +
+                `💰 Montant : **${config.MONTHLY_BONUS} ${config.MONEY_NAME}s**\n` +
                 `👥 Membres crédités : **${usersCount}**\n` +
                 `📅 Mois : **${monthKey}**`,
                 guildId
@@ -192,21 +172,9 @@ async function handleMonthlyBonus() {
 // ============================================================
 
 async function registerCommands() {
-    console.log(
-        '📋 Commandes à enregistrer :',
-        commandDefinitions.map(command => command.name)
-    );
-
-    const rest = new REST({ version: '10' })
-        .setToken(process.env.DISCORD_TOKEN);
-
-    await rest.put(
-        Routes.applicationCommands(process.env.CLIENT_ID),
-        {
-            body: commandDefinitions,
-        }
-    );
-
+    console.log('📋 Commandes à enregistrer :', commandDefinitions.map(c => c.name));
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commandDefinitions });
     console.log('✅ Commandes slash enregistrées');
 }
 
@@ -221,13 +189,8 @@ function isInAutoScanWindow() {
         minute: '2-digit',
         hour12: false,
     });
-
     const now = formatter.format(new Date());
-
-    return (
-        now >= config.TWITCH_AUTO_SCAN_START &&
-        now <= config.TWITCH_AUTO_SCAN_END
-    );
+    return now >= config.TWITCH_AUTO_SCAN_START && now <= config.TWITCH_AUTO_SCAN_END;
 }
 
 async function handleLiveEndAuto(guildId) {
@@ -264,6 +227,27 @@ function startTwitchLiveEndScan(guildId, twitchUsername) {
     }, config.TWITCH_LIVE_END_SCAN_INTERVAL_MS);
 }
 
+async function startTwitchForGuild(guildId) {
+    const settings = await db.getServerSettings(guildId).catch(() => null);
+    const twitchUsername = settings?.twitch_username || config.TWITCH_USERNAME;
+    if (!twitchUsername) return;
+
+    // Déconnecter l'ancien chat si existant
+    const existing = activeTwitchChats.get(guildId);
+    if (existing) {
+        existing.disconnect().catch(() => null);
+    }
+
+    const twitchChat = twitchService.createTwitchChat(client, guildId, twitchUsername, sendContestLog);
+    twitchChat.connect().catch(error => {
+        console.error(`❌ [${guildId}] Erreur connexion Twitch chat:`, error.message);
+    });
+
+    activeTwitchChats.set(guildId, twitchChat);
+    startTwitchAutoScan(guildId, twitchUsername);
+    startTwitchLiveEndScan(guildId, twitchUsername);
+}
+
 // ============================================================
 // CLIENT READY
 // ============================================================
@@ -274,77 +258,16 @@ client.once('clientReady', async () => {
     await db.initDatabase();
     await registerCommands();
     await restoreDisboardReminder(client);
-    
 
     for (const [guildId] of client.guilds.cache) {
-        const settings = await db.getServerSettings(guildId).catch(() => null);
-        const twitchUsername = settings?.twitch_username || config.TWITCH_USERNAME;
-        if (!twitchUsername) continue;
-
-        const twitchChat = twitchService.createTwitchChat(client, guildId, twitchUsername, sendContestLog);
-        twitchChat.connect().catch(error => {
-            console.error(`❌ [${guildId}] Erreur connexion Twitch chat:`, error.message);
-        });
-
-        startTwitchAutoScan(guildId, twitchUsername);
-        startTwitchLiveEndScan(guildId, twitchUsername);
+        await startTwitchForGuild(guildId);
     }
 
     setInterval(cleanExpiredRoles, 10 * 60 * 1000);
     cleanExpiredRoles();
 
-    setInterval(() => {
-        handleMonthlyBonus().catch(console.error);
-    }, 60 * 60 * 1000);
-
+    setInterval(() => { handleMonthlyBonus().catch(console.error); }, 60 * 60 * 1000);
     handleMonthlyBonus().catch(console.error);
-});
-
-// ============================================================
-// LOGS MODÉRATION — MESSAGE SUPPRIMÉ
-// ============================================================
-
-client.on('messageDelete', async (message) => {
-    try {
-        if (!message.guild || message.author?.bot) {
-            return;
-        }
-
-        await sendModLog(
-            `🗑️ **Message supprimé**\n\n` +
-            `👤 Auteur : ${message.author || 'Inconnu'}\n` +
-            `📍 Salon : ${message.channel}\n` +
-            `📝 Contenu :\n${message.content || '*Contenu indisponible*'}`
-        );
-    } catch (error) {
-        console.error('❌ Erreur log messageDelete:', error);
-    }
-});
-
-// ============================================================
-// LOGS MODÉRATION — MESSAGE MODIFIÉ
-// ============================================================
-
-client.on('messageUpdate', async (oldMessage, newMessage) => {
-    try {
-        if (!oldMessage.guild || oldMessage.author?.bot) {
-            return;
-        }
-
-        if (oldMessage.content === newMessage.content) {
-            return;
-        }
-
-        await sendModLog(
-            `✏️ **Message modifié**\n\n` +
-            `👤 Auteur : ${oldMessage.author}\n` +
-            `📍 Salon : ${oldMessage.channel}\n\n` +
-            `**Avant :**\n${oldMessage.content || '*Indisponible*'}\n\n` +
-            `**Après :**\n${newMessage.content || '*Indisponible*'}`
-        );
-    } catch (error) {
-        console.error('❌ Erreur log messageUpdate:', error);
-    }
 });
 
 // ============================================================
@@ -363,32 +286,15 @@ client.on('interactionCreate', async (interaction) => {
                 processLivePhrases,
             });
         }
-
-        if (interaction.isButton()) {
-            return handleButton(interaction, client, sendLog);
-        }
-
-        if (interaction.isModalSubmit()) {
-            return handleModal(interaction, client, sendLog);
-        }
-
-        if (interaction.isStringSelectMenu()) {
-            return handleSelectMenu(interaction);
-        }
+        if (interaction.isButton()) return handleButton(interaction, client, sendLog);
+        if (interaction.isModalSubmit()) return handleModal(interaction, client, sendLog);
+        if (interaction.isStringSelectMenu()) return handleSelectMenu(interaction);
     } catch (error) {
         console.error('❌ Erreur interaction:', error);
-
-        const reply = {
-            content: '❌ Une erreur est survenue, réessaie.',
-            flags: 64,
-        };
-
+        const reply = { content: '❌ Une erreur est survenue, réessaie.', flags: 64 };
         try {
-            if (interaction.deferred || interaction.replied) {
-                await interaction.editReply(reply);
-            } else {
-                await interaction.reply(reply);
-            }
+            if (interaction.deferred || interaction.replied) await interaction.editReply(reply);
+            else await interaction.reply(reply);
         } catch (_) {}
     }
 });
@@ -398,64 +304,33 @@ client.on('interactionCreate', async (interaction) => {
 // ============================================================
 
 client.on('messageCreate', (message) => {
-    handleMessage(
-        message,
-        client,
-        sendLog,
-        pendingEmojiRequests
-    ).catch(console.error);
+    handleMessage(message, client, sendLog, pendingEmojiRequests).catch(console.error);
 });
 
-// ============================================================
-// SERVEUR WEB OVERLAY
-// ============================================================
-
-const app = express();
-
-app.get('/overlay-view', (req, res) => {
-    res.sendFile(
-        path.join(__dirname, 'public', 'overlay.html')
-    );
-});
-
-app.get('/overlay', (req, res) => {
-    res.redirect('/overlay-view');
-});
-
-app.get('/overlay/latest', async (req, res) => {
+client.on('messageDelete', async (message) => {
     try {
-        const events = await db.getLatestOverlayEvents(20);
-
-        if (!events || events.length === 0) {
-            return res.json({
-                active: false,
-                items: [],
-            });
-        }
-
-        return res.json({
-            active: true,
-            items: events.map(event => ({
-                id: event.id,
-                source: event.source,
-                rewardName: event.title,
-                userInput: event.text || '',
-                author: event.author || '',
-                createdAt: event.created_at,
-            })),
-        });
-    } catch (error) {
-        console.error('❌ Erreur route /overlay/latest:', error);
-
-        return res.status(500).json({
-            active: false,
-            items: [],
-        });
-    }
+        if (!message.guild || message.author?.bot) return;
+        await sendModLog(
+            `🗑️ **Message supprimé**\n\n` +
+            `👤 Auteur : ${message.author || 'Inconnu'}\n` +
+            `📍 Salon : ${message.channel}\n` +
+            `📝 Contenu :\n${message.content || '*Contenu indisponible*'}`
+        );
+    } catch (error) { console.error('❌ Erreur log messageDelete:', error); }
 });
 
-app.get('/test', (req, res) => {
-    res.send('TEST OK ✅');
+client.on('messageUpdate', async (oldMessage, newMessage) => {
+    try {
+        if (!oldMessage.guild || oldMessage.author?.bot) return;
+        if (oldMessage.content === newMessage.content) return;
+        await sendModLog(
+            `✏️ **Message modifié**\n\n` +
+            `👤 Auteur : ${oldMessage.author}\n` +
+            `📍 Salon : ${oldMessage.channel}\n\n` +
+            `**Avant :**\n${oldMessage.content || '*Indisponible*'}\n\n` +
+            `**Après :**\n${newMessage.content || '*Indisponible*'}`
+        );
+    } catch (error) { console.error('❌ Erreur log messageUpdate:', error); }
 });
 
 // ============================================================
@@ -464,15 +339,9 @@ app.get('/test', (req, res) => {
 
 async function triggerRaidAlert(guildId, members) {
     if (security.isRaidMode(guildId)) return;
-
     security.enableRaidMode(guildId);
-
     const channel = await fetchConfiguredChannel(client, guildId, 'security_log_channel_id', config.SECURITY_LOG_CHANNEL_ID).catch(() => null);
-
-    if (!channel) {
-        return;
-    }
-
+    if (!channel) return;
     await channel.send(
         `🚨 **RAID POTENTIEL DÉTECTÉ**\n\n` +
         `👥 Arrivées : **${members.length} membres**\n` +
@@ -480,12 +349,11 @@ async function triggerRaidAlert(guildId, members) {
         `🛡️ Mode Raid activé automatiquement.\n\n` +
         members.map(member => `• ${member.user.tag}`).join('\n')
     ).catch(() => null);
-
     console.log(`🚨 [${guildId}] MODE RAID ACTIVÉ`);
 }
 
 // ============================================================
-// ONBOARDING — ARRIVÉE MEMBRE
+// ONBOARDING
 // ============================================================
 
 client.on('guildMemberAdd', async (member) => {
@@ -497,11 +365,9 @@ client.on('guildMemberAdd', async (member) => {
         const now = Date.now();
 
         recentJoins.push({ member, timestamp: now });
-
         while (recentJoins.length && now - recentJoins[0].timestamp > config.ANTI_RAID_WINDOW_MS) {
             recentJoins.shift();
         }
-
         if (recentJoins.length >= config.ANTI_RAID_THRESHOLD) {
             await triggerRaidAlert(guildId, recentJoins.map(entry => entry.member));
         }
@@ -512,66 +378,29 @@ client.on('guildMemberAdd', async (member) => {
             `🧩 Rôle ajouté : <@&${config.ROLE_ETAPE_1_ID}>`
         ).catch(() => null);
 
-        console.log(
-            `👋 Nouveau membre : ${member.user.tag} → Étape 1`
-        );
+        console.log(`👋 Nouveau membre : ${member.user.tag} → Étape 1`);
     } catch (error) {
-        console.error(
-            '❌ Erreur guildMemberAdd onboarding:',
-            error.message
-        );
+        console.error('❌ Erreur guildMemberAdd onboarding:', error.message);
     }
 });
 
-// ============================================================
-// ONBOARDING — RÈGLEMENT ACCEPTÉ
-// ============================================================
-
 client.on('messageReactionAdd', async (reaction, user) => {
     try {
-        if (user.bot) {
-            return;
-        }
-
-        if (security.isRaidMode(reaction.message?.guild?.id)) {
-            return;
-        }
-
-        if (reaction.partial) {
-            await reaction.fetch().catch(() => null);
-        }
-
-        if (!reaction.message || reaction.message.id !== config.REGLEMENT_MESSAGE_ID) {
-            return;
-        }
-
-        const emojiName = reaction.emoji.name;
-
-        if (emojiName !== config.REGLEMENT_EMOJI_NAME) {
-            return;
-        }
+        if (user.bot) return;
+        if (security.isRaidMode(reaction.message?.guild?.id)) return;
+        if (reaction.partial) await reaction.fetch().catch(() => null);
+        if (!reaction.message || reaction.message.id !== config.REGLEMENT_MESSAGE_ID) return;
+        if (reaction.emoji.name !== config.REGLEMENT_EMOJI_NAME) return;
 
         const guild = reaction.message.guild;
+        if (!guild) return;
 
-        if (!guild) {
-            return;
-        }
-
-        const member = await guild.members
-            .fetch(user.id)
-            .catch(() => null);
-
-        if (!member) {
-            return;
-        }
-
-        if (!member.roles.cache.has(config.ROLE_ETAPE_1_ID)) {
-            return;
-        }
+        const member = await guild.members.fetch(user.id).catch(() => null);
+        if (!member) return;
+        if (!member.roles.cache.has(config.ROLE_ETAPE_1_ID)) return;
 
         await member.roles.remove(config.ROLE_ETAPE_1_ID).catch(() => null);
         await member.roles.add(config.ROLE_ETAPE_2_ID);
-
         await sendAgeChoiceMessage(member);
 
         await sendOnboardingLog(
@@ -580,39 +409,18 @@ client.on('messageReactionAdd', async (reaction, user) => {
             `➖ Retiré : <@&${config.ROLE_ETAPE_1_ID}>\n` +
             `➕ Ajouté : <@&${config.ROLE_ETAPE_2_ID}>`
         ).catch(() => null);
-
-        console.log(
-            `✅ ${member.user.tag} a accepté le règlement → Étape 2`
-        );
     } catch (error) {
-        console.error(
-            '❌ Erreur messageReactionAdd onboarding:',
-            error.message
-        );
+        console.error('❌ Erreur messageReactionAdd onboarding:', error.message);
     }
 });
 
 async function sendAgeChoiceMessage(member) {
-    const rolesChannel = await client.channels
-        .fetch(config.SALON_ROLES_ID)
-        .catch(() => null);
-
-    if (!rolesChannel) {
-        return;
-    }
+    const rolesChannel = await client.channels.fetch(config.SALON_ROLES_ID).catch(() => null);
+    if (!rolesChannel) return;
 
     const ageButtons = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('onboarding_age_minor')
-            .setLabel('Mineur')
-            .setEmoji('🔞')
-            .setStyle(ButtonStyle.Secondary),
-
-        new ButtonBuilder()
-            .setCustomId('onboarding_age_adult')
-            .setLabel('Majeur')
-            .setEmoji('✅')
-            .setStyle(ButtonStyle.Success)
+        new ButtonBuilder().setCustomId('onboarding_age_minor').setLabel('Mineur').setEmoji('🔞').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('onboarding_age_adult').setLabel('Majeur').setEmoji('✅').setStyle(ButtonStyle.Success)
     );
 
     await rolesChannel.send({
@@ -626,37 +434,110 @@ async function sendAgeChoiceMessage(member) {
     }).catch(() => null);
 }
 
-// ============================================================
-// DÉPART MEMBRE
-// ============================================================
-
 client.on('guildMemberRemove', async (member) => {
     try {
         console.log(`👋 Départ détecté : ${member.user.tag}`);
-
-        const goodbyeChannel = await client.channels
-            .fetch(config.GOODBYE_CHANNEL_ID)
-            .catch(() => null);
-
-        if (!goodbyeChannel) {
-            console.log('❌ Salon au revoir introuvable');
-            return;
-        }
-
-        await goodbyeChannel.send(
-            `👋 ${member.user.tag} a quitté Black&Co'`
-        ).catch(() => null);
+        const goodbyeChannel = await client.channels.fetch(config.GOODBYE_CHANNEL_ID).catch(() => null);
+        if (!goodbyeChannel) return;
+        await goodbyeChannel.send(`👋 ${member.user.tag} a quitté Black&Co'`).catch(() => null);
     } catch (error) {
         console.error('❌ Erreur départ membre:', error);
     }
 });
 
 // ============================================================
-// DÉMARRAGE
+// SERVEUR WEB — OVERLAY + API INTERNE
 // ============================================================
 
-const PORT = process.env.PORT || 3000;
+const app = express();
+app.use(express.json());
 
+// Middleware de sécurité pour l'API interne
+function requireApiKey(req, res, next) {
+    const key = req.headers['x-api-key'];
+    if (!key || key !== process.env.INTERNAL_API_KEY) {
+        return res.status(401).json({ error: 'Non autorisé' });
+    }
+    next();
+}
+
+// ── OVERLAY ──────────────────────────────────────────────────
+
+app.get('/overlay-view', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'overlay.html'));
+});
+
+app.get('/overlay', (req, res) => res.redirect('/overlay-view'));
+
+app.get('/overlay/latest', async (req, res) => {
+    try {
+        const events = await db.getLatestOverlayEvents(20);
+        if (!events || events.length === 0) return res.json({ active: false, items: [] });
+        return res.json({
+            active: true,
+            items: events.map(event => ({
+                id: event.id,
+                source: event.source,
+                rewardName: event.title,
+                userInput: event.text || '',
+                author: event.author || '',
+                createdAt: event.created_at,
+            })),
+        });
+    } catch (error) {
+        console.error('❌ Erreur route /overlay/latest:', error);
+        return res.status(500).json({ active: false, items: [] });
+    }
+});
+
+app.get('/test', (req, res) => res.send('TEST OK ✅'));
+
+// ── API INTERNE (appelée par le dashboard) ───────────────────
+
+// Recharge les settings d'un guild (salons de log, rôles, etc.)
+app.post('/api/settings/reload/:guildId', requireApiKey, async (req, res) => {
+    const { guildId } = req.params;
+    console.log(`🔄 [${guildId}] Rechargement des settings depuis le dashboard`);
+    // Les settings sont lus depuis la DB à chaque utilisation, donc rien à faire ici
+    // Sauf si le username Twitch a changé — dans ce cas on redémarre le chat
+    res.json({ ok: true, message: 'Settings rechargés' });
+});
+
+// Redémarre le scan Twitch pour un guild (si le username a changé)
+app.post('/api/twitch/restart/:guildId', requireApiKey, async (req, res) => {
+    const { guildId } = req.params;
+    console.log(`🔄 [${guildId}] Redémarrage Twitch depuis le dashboard`);
+    try {
+        await startTwitchForGuild(guildId);
+        res.json({ ok: true, message: 'Twitch redémarré' });
+    } catch (err) {
+        console.error(`❌ Erreur restart Twitch [${guildId}]:`, err.message);
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+// Envoie un message dans un salon Discord (utile pour tester depuis le dashboard)
+app.post('/api/message/:guildId', requireApiKey, async (req, res) => {
+    const { guildId } = req.params;
+    const { channelId, content } = req.body;
+
+    if (!channelId || !content) {
+        return res.status(400).json({ error: 'channelId et content requis' });
+    }
+
+    try {
+        const channel = await client.channels.fetch(channelId).catch(() => null);
+        if (!channel) return res.status(404).json({ error: 'Salon introuvable' });
+        await channel.send(content);
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+// ── DÉMARRAGE ────────────────────────────────────────────────
+
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🌐 Overlay Web démarré sur le port ${PORT}`);
 });
