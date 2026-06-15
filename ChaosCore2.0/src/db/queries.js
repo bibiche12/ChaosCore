@@ -282,6 +282,18 @@ async function initDatabase() {
         );
     `);
 
+    await pool.query(`
+    CREATE TABLE IF NOT EXISTS casino_logs (
+        id BIGSERIAL PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        game TEXT NOT NULL,
+        mise INTEGER NOT NULL,
+        gain INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+    )
+`);
+
     console.log('✅ Base de données initialisée');
 }
 
