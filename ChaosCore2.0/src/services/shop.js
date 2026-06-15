@@ -9,11 +9,7 @@ const db = require('../db/queries');
 
 function buildBuyButton(customId, label, emoji) {
     return new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(customId)
-            .setLabel(label)
-            .setEmoji(emoji)
-            .setStyle(ButtonStyle.Primary)
+        new ButtonBuilder().setCustomId(customId).setLabel(label).setEmoji(emoji).setStyle(ButtonStyle.Primary)
     );
 }
 
@@ -26,68 +22,56 @@ function parsePhraseContent(content) {
     }
 }
 
-async function fetchLogChannel(discordClient) {
-    return discordClient.channels
-        .fetch(config.LOG_CHANNEL_ID)
-        .catch(() => null);
+async function getShopSettings(guildId) {
+    const moduleSettings = await db.getModuleSettings(guildId, 'shop').catch(() => null);
+    const serverSettings = await db.getServerSettings(guildId).catch(() => null);
+    return { moduleSettings, serverSettings };
 }
 
-async function setupShop(shopChannel) {
-    await sendShopIntro(shopChannel);
-    await sendEmojiShopItem(shopChannel);
-    await sendRoleShopItem(shopChannel);
-    await sendGageShopItem(shopChannel);
-    await sendPhraseShopItem(shopChannel);
-}
+async function setupShop(shopChannel, guildId) {
+    const { moduleSettings } = await getShopSettings(guildId);
 
-async function sendShopIntro(shopChannel) {
+    const moneyName = config.MONEY_NAME;
+
     await shopChannel.send({
         content:
-            `🏦 **Boutique**\n\n` +
-            `Bienvenue dans la boutique officielle des **${config.MONEY_NAME}s**.\n` +
+            `🏦 **${moduleSettings?.module_name || 'Magasin'}**\n\n` +
+            `Bienvenue dans la boutique officielle des **${moneyName}s**.\n` +
             `Clique sur les boutons pour faire une demande d'achat.`,
     });
-}
 
-async function sendEmojiShopItem(shopChannel) {
     await shopChannel.send({
         content:
             `🎨 **Emoji personnalisé**\n\n` +
-            `💰 Prix : **${config.SHOP_PRICES.emoji} ${config.MONEY_NAME}s**\n` +
+            `💰 Prix : **${config.SHOP_PRICES.emoji} ${moneyName}s**\n` +
             `📌 Validation : manuelle\n` +
             `📎 Image à fournir après la demande`,
         components: [buildBuyButton('shop_buy_emoji', 'Acheter', '🛒')],
     });
-}
 
-async function sendRoleShopItem(shopChannel) {
     await shopChannel.send({
         content:
             `👑 **Rôle temporaire personnalisé**\n\n` +
-            `💰 1 semaine : **${config.SHOP_PRICES.role[7]} ${config.MONEY_NAME}s**\n` +
-            `💰 2 semaines : **${config.SHOP_PRICES.role[14]} ${config.MONEY_NAME}s**\n` +
-            `💰 1 mois : **${config.SHOP_PRICES.role[30]} ${config.MONEY_NAME}s**\n\n` +
+            `💰 1 semaine : **${config.SHOP_PRICES.role[7]} ${moneyName}s**\n` +
+            `💰 2 semaines : **${config.SHOP_PRICES.role[14]} ${moneyName}s**\n` +
+            `💰 1 mois : **${config.SHOP_PRICES.role[30]} ${moneyName}s**\n\n` +
             `🎨 Couleurs disponibles : Rouge, Orange, Jaune, Vert, Bleu, Violet, Rose, Noir, Blanc, Marron`,
         components: [buildBuyButton('shop_buy_role', 'Acheter', '🛒')],
     });
-}
 
-async function sendGageShopItem(shopChannel) {
     await shopChannel.send({
         content:
             `😈 **Gage imposé**\n\n` +
-            `💰 Prix : **${config.SHOP_PRICES.gage} ${config.MONEY_NAME}s**\n` +
+            `💰 Prix : **${config.SHOP_PRICES.gage} ${moneyName}s**\n` +
             `📌 Validation : manuelle`,
         components: [buildBuyButton('shop_buy_gage', 'Acheter', '🛒')],
     });
-}
 
-async function sendPhraseShopItem(shopChannel) {
     await shopChannel.send({
         content:
             `📢 **Phrase épinglée sur le live**\n\n` +
-            `💰 1 live : **${config.SHOP_PRICES.phrase[1]} ${config.MONEY_NAME}s**\n` +
-            `💰 2 lives : **${config.SHOP_PRICES.phrase[2]} ${config.MONEY_NAME}s**\n` +
+            `💰 1 live : **${config.SHOP_PRICES.phrase[1]} ${moneyName}s**\n` +
+            `💰 2 lives : **${config.SHOP_PRICES.phrase[2]} ${moneyName}s**\n` +
             `📌 Validation : manuelle`,
         components: [buildBuyButton('shop_buy_phrase', 'Acheter', '🛒')],
     });
@@ -95,36 +79,32 @@ async function sendPhraseShopItem(shopChannel) {
 
 async function processLivePhrases(discordClient, guildId) {
     const updatedPhrases = await db.decrementLivePhrases(guildId);
-
     if (!updatedPhrases || updatedPhrases.length === 0) return;
 
-    const logChannel = await fetchLogChannel(discordClient);
+    // Lire le salon de log depuis server_settings
+    const serverSettings = await db.getServerSettings(guildId).catch(() => null);
+    const logChannelId = serverSettings?.log_channel_id || config.LOG_CHANNEL_ID;
+    const logChannel = await discordClient.channels.fetch(logChannelId).catch(() => null);
 
     for (const phrase of updatedPhrases) {
-        await sendPhraseUpdateLog(logChannel, phrase);
+        if (!logChannel) continue;
+        const phraseText = parsePhraseContent(phrase.content);
+
+        if (phrase.completed) {
+            await logChannel.send(
+                `📢 **Phrase live terminée**\n\n` +
+                `👤 Membre : <@${phrase.user_id}>\n` +
+                `📝 Phrase : ${phraseText}`
+            ).catch(() => null);
+        } else {
+            await logChannel.send(
+                `📢 **Phrase live décrémentée**\n\n` +
+                `👤 Membre : <@${phrase.user_id}>\n` +
+                `📝 Phrase : ${phraseText}\n` +
+                `📺 Lives restants : **${phrase.lives_remaining}**`
+            ).catch(() => null);
+        }
     }
-}
-
-async function sendPhraseUpdateLog(logChannel, phrase) {
-    if (!logChannel) return;
-
-    const phraseText = parsePhraseContent(phrase.content);
-
-    if (phrase.completed) {
-        await logChannel.send(
-            `📢 **Phrase live terminée**\n\n` +
-            `👤 Membre : <@${phrase.user_id}>\n` +
-            `📝 Phrase : ${phraseText}`
-        ).catch(() => null);
-        return;
-    }
-
-    await logChannel.send(
-        `📢 **Phrase live décrémentée**\n\n` +
-        `👤 Membre : <@${phrase.user_id}>\n` +
-        `📝 Phrase : ${phraseText}\n` +
-        `📺 Lives restants : **${phrase.lives_remaining}**`
-    ).catch(() => null);
 }
 
 module.exports = { setupShop, processLivePhrases };

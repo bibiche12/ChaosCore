@@ -1,48 +1,48 @@
-// ============================================================
-// RÉCOMPENSES TWITCH
-// ============================================================
+const config = require('../../config');
+const db = require('../../db/queries');
+const { buildResultsMessage, disableComponents } = require('./pollResults');
 
-const REWARDS = {
-    '🦌 Coucou Bibiche': {
-        tickets: 1,
-        showOnOverlay: false,
-    },
+async function closePollAndPublishResults(client, pollId, closedBy = 'système') {
+    const poll = await db.getPoll(pollId);
+    if (!poll || poll.closed) return false;
 
-    '📢 Message du Chaos': {
-        tickets: 1,
-        showOnOverlay: false,
-    },
+    await db.closePoll(pollId);
 
-    '🎲 Mini Chaos': {
-        tickets: 1,
-        showOnOverlay: true,
-    },
+    const [options, results, freeAnswers, detailedVotes] = await Promise.all([
+        db.getPollOptions(pollId),
+        db.getPollResults(pollId),
+        db.getPollFreeAnswers(pollId),
+        db.getDetailedPollVotes(pollId),
+    ]);
 
-    '👻 Vérification Paranormale - PHASMO': {
-        tickets: 1,
-        showOnOverlay: true,
-    },
+    // Désactiver les boutons sur le message original
+    if (poll.channel_id && poll.message_id) {
+        const pollChannel = await client.channels.fetch(poll.channel_id).catch(() => null);
+        if (pollChannel) {
+            const pollMessage = await pollChannel.messages.fetch(poll.message_id).catch(() => null);
+            if (pollMessage) {
+                await pollMessage.edit({
+                    components: disableComponents(pollMessage.components),
+                }).catch(() => null);
+            }
+        }
+    }
 
-    '👑 Choix du Chaos': {
-        tickets: 2,
-        showOnOverlay: true,
-    },
+    // Envoyer les résultats dans le salon configuré
+    const pollSettings = await db.getModuleSettings(poll.guild_id, 'polls').catch(() => null);
+    const resultsChannelId = pollSettings?.results_channel_id || config.POLL_RESULTS_CHANNEL_ID;
 
-    '🎤 Voix de Bibiche': {
-        tickets: 3,
-        showOnOverlay: true,
-    },
+    if (resultsChannelId) {
+        const resultsChannel = await client.channels.fetch(resultsChannelId).catch(() => null);
+        if (resultsChannel) {
+            await resultsChannel.send(
+                buildResultsMessage(poll, results, freeAnswers, detailedVotes)
+            ).catch(() => null);
+        }
+    }
 
-    '☠️ Chaos Total': {
-        tickets: 3,
-        showOnOverlay: true,
-    },
-};
+    console.log(`🔒 Sondage #${pollId} clôturé par ${closedBy}`);
+    return true;
+}
 
-// ============================================================
-// EXPORTS
-// ============================================================
-
-module.exports = {
-    REWARDS,
-};
+module.exports = { closePollAndPublishResults };
