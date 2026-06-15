@@ -200,46 +200,46 @@ async function initDatabase() {
     `);
 
     await pool.query(`
-    CREATE TABLE IF NOT EXISTS support_tickets (
-        id SERIAL PRIMARY KEY,
-        guild_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        channel_id TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'open',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        closed_at TIMESTAMP
-    );
-`);
-await pool.query(`
-    CREATE TABLE IF NOT EXISTS birthdays (
-        guild_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        day INTEGER NOT NULL,
-        month INTEGER NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (guild_id, user_id)
-    );
-`);
+        CREATE TABLE IF NOT EXISTS support_tickets (
+            id SERIAL PRIMARY KEY,
+            guild_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            channel_id TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'open',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            closed_at TIMESTAMP
+        );
+    `);
 
-await pool.query(`
-    CREATE TABLE IF NOT EXISTS birthday_settings (
-        guild_id TEXT PRIMARY KEY,
-        channel_id TEXT NOT NULL,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-`);
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS birthdays (
+            guild_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            day INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (guild_id, user_id)
+        );
+    `);
 
-await pool.query(`
-    CREATE TABLE IF NOT EXISTS birthday_announcements (
-        guild_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        announce_date TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (guild_id, user_id, announce_date)
-    );
-`);
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS birthday_settings (
+            guild_id TEXT PRIMARY KEY,
+            channel_id TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    `);
 
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS birthday_announcements (
+            guild_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            announce_date TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (guild_id, user_id, announce_date)
+        );
+    `);
 
     await pool.query(`
         CREATE TABLE IF NOT EXISTS server_settings (
@@ -271,6 +271,17 @@ await pool.query(`
         );
     `);
 
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS guild_module_settings (
+            id SERIAL PRIMARY KEY,
+            guild_id TEXT NOT NULL,
+            module_name TEXT NOT NULL,
+            settings JSONB NOT NULL DEFAULT '{}'::jsonb,
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE (guild_id, module_name)
+        );
+    `);
+
     console.log('✅ Base de données initialisée');
 }
 
@@ -291,6 +302,20 @@ const polls = require('./modules/polls')(pool);
 const bump = require('./modules/bump')(pool);
 const supportTickets = require('./modules/supportTickets')(pool);
 const birthdays = require('./modules/birthdays')(pool);
+
+// ============================================================
+// SETTINGS MODULES (dashboard → bot)
+// ============================================================
+
+async function getModuleSettings(guildId, moduleName) {
+    const result = await pool.query(
+        `SELECT settings FROM guild_module_settings WHERE guild_id = $1 AND module_name = $2`,
+        [guildId, moduleName]
+    );
+    if (result.rows.length === 0) return null;
+    return result.rows[0].settings;
+}
+
 // ============================================================
 // EXPORTS
 // ============================================================
@@ -298,6 +323,7 @@ const birthdays = require('./modules/birthdays')(pool);
 module.exports = {
     pool,
     initDatabase,
+    getModuleSettings,
 
     ...serverSettings,
     ...economy,

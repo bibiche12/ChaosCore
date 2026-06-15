@@ -26,10 +26,6 @@ const { handleButton, handleModal, handleSelectMenu, pendingEmojiRequests } = re
 const { handleMessage, restoreDisboardReminder } = require('./src/handlers/messages');
 const { startBirthdayJob } = require('./src/services/birthdayService');
 
-// ============================================================
-// CLIENT DISCORD
-// ============================================================
-
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -53,8 +49,8 @@ const activeTwitchChats = new Map();
 // LOGS
 // ============================================================
 
-async function sendOnboardingLog(message) {
-    const channel = await client.channels.fetch(config.ONBOARDING_LOG_CHANNEL_ID).catch(() => null);
+async function sendOnboardingLog(guildId, message) {
+    const channel = await fetchConfiguredChannel(client, guildId, 'onboarding_log_channel_id', config.ONBOARDING_LOG_CHANNEL_ID);
     if (channel) await channel.send(message).catch(console.error);
 }
 
@@ -71,6 +67,73 @@ async function sendLog(message, guildId) {
 async function sendContestLog(message, guildId) {
     const channel = await fetchConfiguredChannel(client, guildId || process.env.GUILD_ID, 'contest_log_channel_id', config.CONTEST_LOG_CHANNEL_ID);
     if (channel) await channel.send(message).catch(console.error);
+}
+
+// ============================================================
+// WELCOME / GOODBYE (lit les settings du dashboard)
+// ============================================================
+
+async function sendWelcomeMessage(member) {
+    const guildId = member.guild.id;
+
+    // Lire les settings welcome depuis guild_module_settings
+    const welcomeSettings = await db.getModuleSettings(guildId, 'welcome').catch(() => null);
+
+    const moduleEnabled = welcomeSettings?.module_enabled !== false;
+    const welcomeEnabled = welcomeSettings?.welcome_enabled !== false;
+
+    if (!moduleEnabled || !welcomeEnabled) return;
+
+    // Salon de bienvenue : dashboard d'abord, sinon server_settings, sinon config
+    const channelId = welcomeSettings?.welcome_channel_id
+        || (await db.getServerSettings(guildId))?.welcome_channel_id
+        || config.WELCOME_CHANNEL_ID;
+
+    if (!channelId) return;
+
+    const channel = await client.channels.fetch(channelId).catch(() => null);
+    if (!channel) return;
+
+    // Message personnalisé avec variables
+    const title = (welcomeSettings?.welcome_title || 'Bienvenue {username} !')
+        .replace('{username}', member.user.username)
+        .replace('{mention}', `${member}`)
+        .replace('{server}', member.guild.name)
+        .replace('{membercount}', member.guild.memberCount);
+
+    const msg = (welcomeSettings?.welcome_message || 'Bienvenue {mention} sur {server} !')
+        .replace('{username}', member.user.username)
+        .replace('{mention}', `${member}`)
+        .replace('{server}', member.guild.name)
+        .replace('{membercount}', member.guild.memberCount);
+
+    await channel.send(`**${title}**\n\n${msg}`).catch(() => null);
+}
+
+async function sendGoodbyeMessage(member) {
+    const guildId = member.guild.id;
+
+    const welcomeSettings = await db.getModuleSettings(guildId, 'welcome').catch(() => null);
+
+    const moduleEnabled = welcomeSettings?.module_enabled !== false;
+    const goodbyeEnabled = welcomeSettings?.goodbye_enabled !== false;
+
+    if (!moduleEnabled || !goodbyeEnabled) return;
+
+    const channelId = welcomeSettings?.goodbye_channel_id
+        || (await db.getServerSettings(guildId))?.goodbye_channel_id
+        || config.GOODBYE_CHANNEL_ID;
+
+    if (!channelId) return;
+
+    const channel = await client.channels.fetch(channelId).catch(() => null);
+    if (!channel) return;
+
+    const msg = (welcomeSettings?.goodbye_message || '{username} a quitté {server}.')
+        .replace('{username}', member.user.username)
+        .replace('{server}', member.guild.name);
+
+    await channel.send(msg).catch(() => null);
 }
 
 // ============================================================
@@ -109,12 +172,19 @@ async function handleMonthlyBonus() {
             const alreadyGiven = await db.hasMonthlyBonusBeenGiven(guildId, monthKey);
             if (alreadyGiven) continue;
 
-            const usersCount = await db.giveMonthlyBonus(guildId, config.MONTHLY_BONUS);
+            // Lire le montant depuis les settings du dashboard
+            const economySettings = await db.getModuleSettings(guildId, 'economy').catch(() => null);
+            const bonusAmount = economySettings?.monthly_bonus_amount || config.MONTHLY_BONUS;
+            const bonusEnabled = economySettings?.monthly_bonus_enabled !== false;
+
+            if (!bonusEnabled) continue;
+
+            const usersCount = await db.giveMonthlyBonus(guildId, bonusAmount);
             await db.markMonthlyBonusGiven(guildId, monthKey, usersCount);
 
             await sendLog(
                 `🎁 **Bonus mensuel distribué**\n\n` +
-                `💰 Montant : **${config.MONTHLY_BONUS} ${config.MONEY_NAME}s**\n` +
+                `💰 Montant : **${bonusAmount} ${config.MONEY_NAME}s**\n` +
                 `👥 Membres crédités : **${usersCount}**\n` +
                 `📅 Mois : **${monthKey}**`,
                 guildId
@@ -139,7 +209,7 @@ async function registerCommands() {
 }
 
 // ============================================================
-// TWITCH — SCAN AUTO
+// TWITCH
 // ============================================================
 
 function isInAutoScanWindow() {
@@ -191,13 +261,11 @@ async function startTwitchForGuild(guildId) {
     const settings = await db.getServerSettings(guildId).catch(() => null);
     const twitchUsername = settings?.twitch_username;
 
-    // Ne démarre Twitch que si le serveur a son propre username OU si c'est le guild principal
     if (!twitchUsername && guildId !== process.env.GUILD_ID) return;
 
     const usernameToUse = twitchUsername || config.TWITCH_USERNAME;
     if (!usernameToUse) return;
 
-    // Déconnecter l'ancien chat si existant
     const existing = activeTwitchChats.get(guildId);
     if (existing) existing.disconnect().catch(() => null);
 
@@ -310,21 +378,23 @@ async function triggerRaidAlert(guildId, members) {
         `👥 Arrivées : **${members.length} membres**\n` +
         `⏱️ Fenêtre : **2 minutes**\n\n` +
         `🛡️ Mode Raid activé automatiquement.\n\n` +
-        members.map(member => `• ${member.user.tag}`).join('\n')
+        members.map(m => `• ${m.user.tag}`).join('\n')
     ).catch(() => null);
     console.log(`🚨 [${guildId}] MODE RAID ACTIVÉ`);
 }
 
 // ============================================================
-// ONBOARDING
+// ONBOARDING + WELCOME
 // ============================================================
 
 client.on('guildMemberAdd', async (member) => {
     try {
         await member.roles.add(config.ROLE_ETAPE_1_ID);
+
         const guildId = member.guild.id;
         const recentJoins = getRecentJoins(guildId);
         const now = Date.now();
+
         recentJoins.push({ member, timestamp: now });
         while (recentJoins.length && now - recentJoins[0].timestamp > config.ANTI_RAID_WINDOW_MS) {
             recentJoins.shift();
@@ -332,11 +402,16 @@ client.on('guildMemberAdd', async (member) => {
         if (recentJoins.length >= config.ANTI_RAID_THRESHOLD) {
             await triggerRaidAlert(guildId, recentJoins.map(entry => entry.member));
         }
-        await sendOnboardingLog(
+
+        // Message de bienvenue depuis les settings du dashboard
+        await sendWelcomeMessage(member);
+
+        await sendOnboardingLog(guildId,
             `👋 **Nouveau membre arrivé**\n\n` +
             `👤 Membre : ${member}\n` +
             `🧩 Rôle ajouté : <@&${config.ROLE_ETAPE_1_ID}>`
         ).catch(() => null);
+
         console.log(`👋 Nouveau membre : ${member.user.tag} → Étape 1`);
     } catch (error) {
         console.error('❌ Erreur guildMemberAdd onboarding:', error.message);
@@ -358,7 +433,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
         await member.roles.remove(config.ROLE_ETAPE_1_ID).catch(() => null);
         await member.roles.add(config.ROLE_ETAPE_2_ID);
         await sendAgeChoiceMessage(member);
-        await sendOnboardingLog(
+        await sendOnboardingLog(member.guild.id,
             `✅ **Règlement accepté**\n\n` +
             `👤 Membre : ${member}\n` +
             `➖ Retiré : <@&${config.ROLE_ETAPE_1_ID}>\n` +
@@ -390,9 +465,8 @@ async function sendAgeChoiceMessage(member) {
 client.on('guildMemberRemove', async (member) => {
     try {
         console.log(`👋 Départ détecté : ${member.user.tag}`);
-        const goodbyeChannel = await client.channels.fetch(config.GOODBYE_CHANNEL_ID).catch(() => null);
-        if (!goodbyeChannel) return;
-        await goodbyeChannel.send(`👋 ${member.user.tag} a quitté Black&Co'`).catch(() => null);
+        // Message au revoir depuis les settings du dashboard
+        await sendGoodbyeMessage(member);
     } catch (error) {
         console.error('❌ Erreur départ membre:', error);
     }
