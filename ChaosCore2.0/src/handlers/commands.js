@@ -17,6 +17,7 @@ const { handlePollCommand } = require('./commands/pollCommands');
 const { handleAdminCommand } = require('./commands/adminCommands');
 const { handleSupportTicketCommand } = require('./commands/supportTicketCommands');
 const { handleBirthdayCommand } = require('./commands/birthdayCommands');
+const { handleCasinoCommand } = require('./commands/casinoCommands');
 
 // ============================================================
 // HANDLER PRINCIPAL
@@ -76,16 +77,26 @@ async function handleCommand(interaction, services) {
     // TICKETS SUPPORT
     // ------------------------------------------------------------
 
-if (await handleSupportTicketCommand(interaction, services)) {
-    return;
-}
-// ------------------------------------------------------------
-// ANNIVERSAIRES
-// ------------------------------------------------------------
+    if (await handleSupportTicketCommand(interaction, services)) {
+        return;
+    }
 
-if (await handleBirthdayCommand(interaction)) {
-    return;
-}
+    // ------------------------------------------------------------
+    // ANNIVERSAIRES
+    // ------------------------------------------------------------
+
+    if (await handleBirthdayCommand(interaction)) {
+        return;
+    }
+
+    // ------------------------------------------------------------
+    // CASINO
+    // ------------------------------------------------------------
+
+    if (await handleCasinoCommand(interaction)) {
+        return;
+    }
+
     // ------------------------------------------------------------
     // ADMINISTRATION
     // ------------------------------------------------------------
