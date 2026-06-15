@@ -38,9 +38,17 @@ function sanitizeMentions(text) {
     return text.replace(/@(everyone|here)/gi, '@ $1');
 }
 
-async function getLogChannel(discordClient, guildId) {
+// Lit le salon de validation depuis guild_module_settings shop (dashboard) en priorité
+async function getValidationChannel(discordClient, guildId) {
+    const shopSettings = await db.getModuleSettings(guildId, 'shop').catch(() => null);
     const serverSettings = await db.getServerSettings(guildId).catch(() => null);
-    const channelId = serverSettings?.log_channel_id || config.LOG_CHANNEL_ID;
+
+    // validation_channel_id du dashboard shop, sinon log_channel_id du shop, sinon log général
+    const channelId = shopSettings?.validation_channel_id
+        || shopSettings?.log_channel_id
+        || serverSettings?.log_channel_id
+        || config.LOG_CHANNEL_ID;
+
     return discordClient.channels.fetch(channelId).catch(() => null);
 }
 
@@ -95,9 +103,9 @@ async function handleConfirmRolePurchase(interaction, discordClient) {
     const requestId = await db.insertShopRequest(guildId, user.id, 'role', JSON.stringify({ roleName: purchase.roleName, color: purchase.color, duration: purchase.duration }), purchase.price);
     pendingRolePurchases.delete(user.id);
 
-    const logChannel = await getLogChannel(discordClient, guildId);
-    if (logChannel) {
-        await logChannel.send({
+    const validationChannel = await getValidationChannel(discordClient, guildId);
+    if (validationChannel) {
+        await validationChannel.send({
             content:
                 `👑 **Nouvelle demande de rôle personnalisé**\n\n` +
                 `👤 Membre : ${user}\n` +
@@ -129,8 +137,6 @@ async function handleBuyGageButton(interaction) {
 async function handleBuyPhraseButton(interaction) {
     await interaction.deferReply({ flags: 64 });
 
-    // Lire les prix depuis shop settings du dashboard
-    const shopSettings = await db.getModuleSettings(interaction.guildId, 'shop').catch(() => null);
     const price1 = config.SHOP_PRICES.phrase[1];
     const price2 = config.SHOP_PRICES.phrase[2];
 
@@ -277,9 +283,9 @@ async function handleGageModal(interaction, discordClient) {
     const { user, guildId } = interaction;
     const gageText = sanitizeMentions(interaction.fields.getTextInputValue('gage_text'));
     const requestId = await db.insertShopRequest(guildId, user.id, 'gage', gageText, config.SHOP_PRICES.gage);
-    const logChannel = await getLogChannel(discordClient, guildId);
-    if (logChannel) {
-        await logChannel.send({
+    const validationChannel = await getValidationChannel(discordClient, guildId);
+    if (validationChannel) {
+        await validationChannel.send({
             content: `😈 **Nouvelle demande de gage**\n\n👤 Membre : ${user}\n💰 Prix : **${config.SHOP_PRICES.gage} ${config.MONEY_NAME}s**\n\n📌 Gage demandé :\n${gageText}`,
             components: [buildApproveRejectButtons(requestId)],
         });
@@ -295,9 +301,9 @@ async function handlePhraseModal(interaction, discordClient) {
     if (!phraseData) { await interaction.editReply({ content: '❌ Durée introuvable. Recommence depuis la boutique.' }); return; }
     const requestId = await db.insertShopRequest(guildId, user.id, 'phrase', JSON.stringify({ text: phraseText, lives: phraseData.lives }), phraseData.price);
     pendingPhraseRequests.delete(user.id);
-    const logChannel = await getLogChannel(discordClient, guildId);
-    if (logChannel) {
-        await logChannel.send({
+    const validationChannel = await getValidationChannel(discordClient, guildId);
+    if (validationChannel) {
+        await validationChannel.send({
             content: `📢 **Nouvelle demande de phrase épinglée**\n\n👤 Membre : ${user}\n💰 Prix : **${phraseData.price} ${config.MONEY_NAME}s**\n📺 Durée : **${phraseData.lives} live(s)**\n\n📌 Phrase demandée :\n${phraseText}`,
             components: [buildApproveRejectButtons(requestId)],
         });

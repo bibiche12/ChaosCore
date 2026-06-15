@@ -59,12 +59,27 @@ async function handleWarningCommand(interaction, discordClient) {
 
     const guildId = interaction.guild.id;
 
-    // Lire les settings sécurité depuis le dashboard
+    // Lire depuis guild_module_settings (dashboard) en priorité
     const securitySettings = await db.getModuleSettings(guildId, 'security').catch(() => null);
     const serverSettings = await db.getServerSettings(guildId).catch(() => null);
 
     const warningLimit = securitySettings?.warning_limit || config.WARNING_LIMIT;
     const warningWindowMs = (securitySettings?.warning_time_window || 24) * 60 * 60 * 1000;
+
+    // Rôle et salon warning — dashboard security d'abord, sinon server_settings, sinon config
+    const warningRoleId = securitySettings?.warning_role_id
+        || serverSettings?.warning_role_id
+        || config.WARNING_ROLE_ID;
+
+    const memberRoleId = serverSettings?.member_role_id || config.ROLE_MEMBRE_ID;
+
+    const moderationChannelId = securitySettings?.moderation_channel_id
+        || serverSettings?.moderation_channel_id
+        || config.MODERATION_CHANNEL_ID;
+
+    const warningExplanationChannelId = securitySettings?.warning_channel_id
+        || serverSettings?.warning_explanation_channel_id
+        || config.WARNING_EXPLANATION_CHANNEL_ID;
 
     await db.addModerationWarning(guildId, member.id, interaction.user.id, reason);
 
@@ -82,16 +97,8 @@ async function handleWarningCommand(interaction, discordClient) {
     );
 
     if (warningCount >= warningLimit) {
-        // Rôle warning depuis server_settings
-        const warningRoleId = serverSettings?.warning_role_id || config.WARNING_ROLE_ID;
-        const memberRoleId = serverSettings?.member_role_id || config.ROLE_MEMBRE_ID;
-
         await member.roles.remove(memberRoleId).catch(() => null);
         await member.roles.add(warningRoleId).catch(() => null);
-
-        // Salon modération depuis server_settings
-        const moderationChannelId = serverSettings?.moderation_channel_id || config.MODERATION_CHANNEL_ID;
-        const warningExplanationChannelId = serverSettings?.warning_explanation_channel_id || config.WARNING_EXPLANATION_CHANNEL_ID;
 
         const moderationChannel = await discordClient.channels.fetch(moderationChannelId).catch(() => null);
         if (moderationChannel) {
@@ -162,10 +169,6 @@ async function handleTestOverlayCommand(interaction, sendContestLog) {
 async function handleSetupRolesCommand(interaction, discordClient) {
     if (!await requireTeam(interaction)) return;
     await interaction.deferReply({ flags: 64 });
-
-    // Lire le salon rôles depuis server_settings
-    const serverSettings = await db.getServerSettings(interaction.guildId).catch(() => null);
-    const rolesChannelId = serverSettings?.step_1_role_id ? config.SALON_ROLES_ID : config.SALON_ROLES_ID;
 
     const roleChannel = await discordClient.channels.fetch(config.SALON_ROLES_ID).catch(() => null);
     if (!roleChannel) { await interaction.editReply('❌ Salon rôles introuvable.'); return; }
