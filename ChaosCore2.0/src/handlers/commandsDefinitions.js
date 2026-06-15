@@ -8,27 +8,13 @@ const commandDefinitions = [
     new SlashCommandBuilder()
         .setName('warning')
         .setDescription('Envoyer un avertissement modération à un membre')
-        .addUserOption(o =>
-            o.setName('membre')
-                .setDescription('Membre à avertir')
-                .setRequired(true)
-        )
-        .addStringOption(o =>
-            o.setName('raison')
-                .setDescription('Raison du warning')
-                .setRequired(false)
-        ),
+        .addUserOption(o => o.setName('membre').setDescription('Membre à avertir').setRequired(true))
+        .addStringOption(o => o.setName('raison').setDescription('Raison du warning').setRequired(false)),
 
     new SlashCommandBuilder()
         .setName('clear')
         .setDescription('Supprimer un nombre de messages dans le salon')
-        .addIntegerOption(o =>
-            o.setName('nombre')
-                .setDescription('Nombre de messages à supprimer')
-                .setRequired(true)
-                .setMinValue(1)
-                .setMaxValue(100)
-        ),
+        .addIntegerOption(o => o.setName('nombre').setDescription('Nombre de messages à supprimer').setRequired(true).setMinValue(1).setMaxValue(100)),
 
     new SlashCommandBuilder()
         .setName('raidoff')
@@ -53,19 +39,12 @@ const commandDefinitions = [
     new SlashCommandBuilder()
         .setName('testoverlay')
         .setDescription("Tester l'affichage d'un gage sur la bannière OBS")
-        .addStringOption(o =>
-            o.setName('reward')
-                .setDescription('Récompense')
-                .setRequired(true)
-        )
-        .addStringOption(o =>
-            o.setName('texte')
-                .setDescription('Texte à afficher')
-                .setRequired(true)
-        ),
-        new SlashCommandBuilder()
-         .setName('setupticket')
-         .setDescription('Créer le panneau de tickets support'),
+        .addStringOption(o => o.setName('reward').setDescription('Récompense').setRequired(true))
+        .addStringOption(o => o.setName('texte').setDescription('Texte à afficher').setRequired(true)),
+
+    new SlashCommandBuilder()
+        .setName('setupticket')
+        .setDescription('Créer le panneau de tickets support'),
 
     // =========================
     // Économie
@@ -78,66 +57,30 @@ const commandDefinitions = [
     new SlashCommandBuilder()
         .setName('adpoint')
         .setDescription('Ajouter des Bichcoins à un membre')
-        .addUserOption(o =>
-            o.setName('membre')
-                .setDescription('Membre à créditer')
-                .setRequired(true)
-        )
-        .addIntegerOption(o =>
-            o.setName('montant')
-                .setDescription('Montant à ajouter')
-                .setRequired(true)
-                .setMinValue(1)
-        ),
+        .addUserOption(o => o.setName('membre').setDescription('Membre à créditer').setRequired(true))
+        .addIntegerOption(o => o.setName('montant').setDescription('Montant à ajouter').setRequired(true).setMinValue(1)),
 
     new SlashCommandBuilder()
         .setName('retpoint')
         .setDescription('Retirer des Bichcoins à un membre')
-        .addUserOption(o =>
-            o.setName('membre')
-                .setDescription('Membre à débiter')
-                .setRequired(true)
-        )
-        .addIntegerOption(o =>
-            o.setName('montant')
-                .setDescription('Montant à retirer')
-                .setRequired(true)
-                .setMinValue(1)
-        ),
+        .addUserOption(o => o.setName('membre').setDescription('Membre à débiter').setRequired(true))
+        .addIntegerOption(o => o.setName('montant').setDescription('Montant à retirer').setRequired(true).setMinValue(1)),
 
     // =========================
     // Tickets du Chaos
     // =========================
 
-       new SlashCommandBuilder()
+    new SlashCommandBuilder()
         .setName('adticket')
         .setDescription('Ajouter des Tickets du Chaos à un membre')
-        .addUserOption(o =>
-            o.setName('membre')
-                .setDescription('Membre à créditer')
-                .setRequired(true)
-        )
-        .addIntegerOption(o =>
-            o.setName('montant')
-                .setDescription('Nombre de tickets')
-                .setRequired(true)
-                .setMinValue(1)
-        ),
+        .addUserOption(o => o.setName('membre').setDescription('Membre à créditer').setRequired(true))
+        .addIntegerOption(o => o.setName('montant').setDescription('Nombre de tickets').setRequired(true).setMinValue(1)),
 
     new SlashCommandBuilder()
         .setName('retticket')
         .setDescription('Retirer des Tickets du Chaos à un membre')
-        .addUserOption(o =>
-            o.setName('membre')
-                .setDescription('Membre à débiter')
-                .setRequired(true)
-        )
-        .addIntegerOption(o =>
-            o.setName('montant')
-                .setDescription('Nombre de tickets')
-                .setRequired(true)
-                .setMinValue(1)
-        ),
+        .addUserOption(o => o.setName('membre').setDescription('Membre à débiter').setRequired(true))
+        .addIntegerOption(o => o.setName('montant').setDescription('Nombre de tickets').setRequired(true).setMinValue(1)),
 
     new SlashCommandBuilder()
         .setName('resume')
@@ -166,16 +109,8 @@ const commandDefinitions = [
     new SlashCommandBuilder()
         .setName('twitch')
         .setDescription('Associer un membre Discord à son pseudo Twitch')
-        .addUserOption(o =>
-            o.setName('membre')
-                .setDescription('Membre Discord')
-                .setRequired(true)
-        )
-        .addStringOption(o =>
-            o.setName('pseudo')
-                .setDescription('Pseudo Twitch')
-                .setRequired(true)
-        ),
+        .addUserOption(o => o.setName('membre').setDescription('Membre Discord').setRequired(true))
+        .addStringOption(o => o.setName('pseudo').setDescription('Pseudo Twitch').setRequired(true)),
 
     new SlashCommandBuilder()
         .setName('twitchlinks')
@@ -204,108 +139,86 @@ const commandDefinitions = [
     new SlashCommandBuilder()
         .setName('sondage')
         .setDescription('Créer un sondage interactif')
-        .addStringOption(o =>
-            o.setName('titre')
-                .setDescription('Titre du sondage')
-                .setRequired(true)
-        )
-        .addStringOption(o =>
-            o.setName('question')
-                .setDescription('Question du sondage')
-                .setRequired(true)
-        )
-        .addStringOption(o =>
-            o.setName('choix1')
-                .setDescription('Choix 1')
-                .setRequired(true)
-        )
-        .addStringOption(o =>
-            o.setName('choix2')
-                .setDescription('Choix 2')
-                .setRequired(true)
-        )
-        .addStringOption(o =>
-            o.setName('duree')
-                .setDescription('Durée du sondage')
-                .setRequired(true)
-                .addChoices(
-                    { name: '🕐 1 heure', value: '1h' },
-                    { name: '📅 1 jour', value: '1j' },
-                    { name: '🗓️ 1 semaine', value: '1semaine' }
-                )
-        )
-        .addStringOption(o =>
-            o.setName('couleur')
-                .setDescription('Couleur du sondage')
-                .setRequired(true)
-                .addChoices(
-                    { name: '🔴 Rouge', value: 'rouge' },
-                    { name: '🟠 Orange', value: 'orange' },
-                    { name: '🟡 Jaune', value: 'jaune' },
-                    { name: '🟢 Vert', value: 'vert' },
-                    { name: '🔵 Bleu', value: 'bleu' },
-                    { name: '🟣 Violet', value: 'violet' },
-                    { name: '🌸 Rose', value: 'rose' },
-                    { name: '⚫ Noir', value: 'noir' }
-                )
-        )
-        .addBooleanOption(o =>
-            o.setName('multiple')
-                .setDescription('Autoriser plusieurs réponses ?')
-                .setRequired(true)
-        )
-        .addBooleanOption(o =>
-            o.setName('reponse_libre')
-                .setDescription('Autoriser une réponse libre ?')
-                .setRequired(true)
-        )
-        .addStringOption(o =>
-            o.setName('choix3')
-                .setDescription('Choix 3')
-                .setRequired(false)
-        )
-        .addStringOption(o =>
-            o.setName('choix4')
-                .setDescription('Choix 4')
-                .setRequired(false)
-        )
-        .addStringOption(o =>
-            o.setName('choix5')
-                .setDescription('Choix 5')
-                .setRequired(false)
-        )
-        .addStringOption(o =>
-            o.setName('choix6')
-                .setDescription('Choix 6')
-                .setRequired(false)
-        ),
-        new SlashCommandBuilder()
-    .setName('anniversaire')
-    .setDescription('Enregistrer ton anniversaire')
-    .addIntegerOption(option =>
-        option.setName('jour')
-            .setDescription('Jour de ton anniversaire')
-            .setRequired(true)
-            .setMinValue(1)
-            .setMaxValue(31)
-    )
-    .addIntegerOption(option =>
-        option.setName('mois')
-            .setDescription('Mois de ton anniversaire')
-            .setRequired(true)
-            .setMinValue(1)
-            .setMaxValue(12)
-    ),
+        .addStringOption(o => o.setName('titre').setDescription('Titre du sondage').setRequired(true))
+        .addStringOption(o => o.setName('question').setDescription('Question du sondage').setRequired(true))
+        .addStringOption(o => o.setName('choix1').setDescription('Choix 1').setRequired(true))
+        .addStringOption(o => o.setName('choix2').setDescription('Choix 2').setRequired(true))
+        .addStringOption(o => o.setName('duree').setDescription('Durée du sondage').setRequired(true).addChoices(
+            { name: '🕐 1 heure', value: '1h' },
+            { name: '📅 1 jour', value: '1j' },
+            { name: '🗓️ 1 semaine', value: '1semaine' }
+        ))
+        .addStringOption(o => o.setName('couleur').setDescription('Couleur du sondage').setRequired(true).addChoices(
+            { name: '🔴 Rouge', value: 'rouge' },
+            { name: '🟠 Orange', value: 'orange' },
+            { name: '🟡 Jaune', value: 'jaune' },
+            { name: '🟢 Vert', value: 'vert' },
+            { name: '🔵 Bleu', value: 'bleu' },
+            { name: '🟣 Violet', value: 'violet' },
+            { name: '🌸 Rose', value: 'rose' },
+            { name: '⚫ Noir', value: 'noir' }
+        ))
+        .addBooleanOption(o => o.setName('multiple').setDescription('Autoriser plusieurs réponses ?').setRequired(true))
+        .addBooleanOption(o => o.setName('reponse_libre').setDescription('Autoriser une réponse libre ?').setRequired(true))
+        .addStringOption(o => o.setName('choix3').setDescription('Choix 3').setRequired(false))
+        .addStringOption(o => o.setName('choix4').setDescription('Choix 4').setRequired(false))
+        .addStringOption(o => o.setName('choix5').setDescription('Choix 5').setRequired(false))
+        .addStringOption(o => o.setName('choix6').setDescription('Choix 6').setRequired(false)),
 
-new SlashCommandBuilder()
-    .setName('setupanniversaire')
-    .setDescription("Configurer le salon d'envoi des anniversaires")
-    .addChannelOption(option =>
-        option.setName('salon')
-            .setDescription("Salon d'envoi du message anniversaire")
-            .setRequired(true)
-    ),
-    
+    // =========================
+    // Anniversaires
+    // =========================
+
+    new SlashCommandBuilder()
+        .setName('anniversaire')
+        .setDescription('Enregistrer ton anniversaire')
+        .addIntegerOption(o => o.setName('jour').setDescription('Jour de ton anniversaire').setRequired(true).setMinValue(1).setMaxValue(31))
+        .addIntegerOption(o => o.setName('mois').setDescription('Mois de ton anniversaire').setRequired(true).setMinValue(1).setMaxValue(12)),
+
+    new SlashCommandBuilder()
+        .setName('setupanniversaire')
+        .setDescription("Configurer le salon d'envoi des anniversaires")
+        .addChannelOption(o => o.setName('salon').setDescription("Salon d'envoi du message anniversaire").setRequired(true)),
+
+    // =========================
+    // Casino
+    // =========================
+
+    new SlashCommandBuilder()
+        .setName('pileouface')
+        .setDescription('Jouer à pile ou face — mise entre 50 et 150')
+        .addIntegerOption(o =>
+            o.setName('mise')
+                .setDescription('Montant à miser (50-150)')
+                .setRequired(true)
+                .setMinValue(50)
+                .setMaxValue(150)
+        )
+        .addStringOption(o =>
+            o.setName('choix')
+                .setDescription('Pile ou face ?')
+                .setRequired(true)
+                .addChoices(
+                    { name: '🪙 Pile', value: 'pile' },
+                    { name: '🎭 Face', value: 'face' }
+                )
+        ),
+
+    new SlashCommandBuilder()
+        .setName('de')
+        .setDescription('Lancer un dé contre le bot — mise entre 50 et 150')
+        .addIntegerOption(o =>
+            o.setName('mise')
+                .setDescription('Montant à miser (50-150)')
+                .setRequired(true)
+                .setMinValue(50)
+                .setMaxValue(150)
+        ),
+
+    new SlashCommandBuilder()
+        .setName('gratter')
+        .setDescription('Acheter un ticket à gratter — coût fixe : 10'),
+
 ].map(c => c.toJSON());
 
 module.exports = {
