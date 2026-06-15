@@ -7,6 +7,18 @@ const MAX_BET = 150;
 const SCRATCH_COST = 10;
 const SCRATCH_PRIZES = [0, 0, 0, 2, 5, 10, 15, 20, 25, 50, 100];
 
+// Log en base pour le dashboard
+async function logCasino(guildId, userId, game, mise, gain) {
+    try {
+        await db.pool.query(
+            `INSERT INTO casino_logs (guild_id, user_id, game, mise, gain) VALUES ($1, $2, $3, $4, $5)`,
+            [guildId, userId, game, mise, gain]
+        );
+    } catch (e) {
+        // Table pas encore créée — on ignore silencieusement
+    }
+}
+
 async function handleCasinoCommand(interaction) {
     const cmd = interaction.commandName;
     if (!['pileouface', 'de', 'gratter'].includes(cmd)) return false;
@@ -47,6 +59,8 @@ async function handleCoinFlip(interaction) {
         newBalance = await db.addPoints(interaction.guildId, interaction.user.id, -mise);
     }
 
+    await logCasino(interaction.guildId, interaction.user.id, 'pileouface', mise, gagne ? mise : -mise);
+
     const embed = new EmbedBuilder()
         .setColor(gagne ? '#22c55e' : '#ef4444')
         .setTitle(gagne ? '🎉 Tu as gagné !' : '💸 Tu as perdu !')
@@ -80,7 +94,6 @@ async function handleDice(interaction) {
     }
 
     let deJoueur, deBot;
-    // Rejouer tant qu'égalité
     do {
         deJoueur = Math.floor(Math.random() * 6) + 1;
         deBot = Math.floor(Math.random() * 6) + 1;
@@ -93,6 +106,8 @@ async function handleDice(interaction) {
     } else {
         newBalance = await db.addPoints(interaction.guildId, interaction.user.id, -mise);
     }
+
+    await logCasino(interaction.guildId, interaction.user.id, 'de', mise, gagne ? mise : -mise);
 
     const embed = new EmbedBuilder()
         .setColor(gagne ? '#22c55e' : '#ef4444')
@@ -120,10 +135,8 @@ async function handleScratch(interaction) {
         return interaction.editReply(`❌ Solde insuffisant. Un ticket coûte **${SCRATCH_COST}** ${config.MONEY_NAME}s. Tu as **${data.balance}**.`);
     }
 
-    // Débiter la mise
     await db.addPoints(interaction.guildId, interaction.user.id, -SCRATCH_COST);
 
-    // Tirage du gain
     const gain = SCRATCH_PRIZES[Math.floor(Math.random() * SCRATCH_PRIZES.length)];
 
     let newBalance;
@@ -134,23 +147,25 @@ async function handleScratch(interaction) {
         newBalance = updated.balance;
     }
 
-    const gagne = gain > 0;
+    await logCasino(interaction.guildId, interaction.user.id, 'gratter', SCRATCH_COST, gain - SCRATCH_COST);
 
-    // Générer 3 cases aléatoires dont une est le vrai gain
-    const fakeValues = SCRATCH_PRIZES.filter(p => p !== gain);
-    const case1 = fakeValues[Math.floor(Math.random() * fakeValues.length)];
-    const case2 = fakeValues[Math.floor(Math.random() * fakeValues.length)];
-    const position = Math.floor(Math.random() * 3);
-    const cases = [case1, case2, gain];
-    cases.splice(position, 0, cases.pop());
+    // Générer 3 cases avec le vrai gain caché dedans
+    const fakePool = SCRATCH_PRIZES.filter(p => p !== gain);
+    const case1 = fakePool[Math.floor(Math.random() * fakePool.length)];
+    const case2 = fakePool[Math.floor(Math.random() * fakePool.length)];
+    const cases = [case1, case2];
+    const pos = Math.floor(Math.random() * 3);
+    cases.splice(pos, 0, gain);
+
+    const gagne = gain > 0;
 
     const embed = new EmbedBuilder()
         .setColor(gagne ? '#f59e0b' : '#6b7280')
         .setTitle('🎟️ Ticket à gratter')
         .setDescription(
-            `┌─────────────────────┐\n` +
-            `│  ${cases[0].toString().padStart(3)} 💰  │  ${cases[1].toString().padStart(3)} 💰  │  ${cases[2].toString().padStart(3)} 💰  │\n` +
-            `└─────────────────────┘`
+            `┌──────────────────────────┐\n` +
+            `│  **${String(cases[0]).padStart(3)} 💰**  │  **${String(cases[1]).padStart(3)} 💰**  │  **${String(cases[2]).padStart(3)} 💰**  │\n` +
+            `└──────────────────────────┘`
         )
         .addFields(
             { name: 'Mise', value: `-${SCRATCH_COST} ${config.MONEY_NAME}s`, inline: true },
