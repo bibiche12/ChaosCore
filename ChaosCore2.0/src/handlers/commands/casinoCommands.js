@@ -1,3 +1,9 @@
+// Vérifier si le casino est activé
+const economySettings = await db.getModuleSettings(interaction.guildId, 'economy').catch(() => null);
+if (economySettings?.casino_enabled === false) {
+    await interaction.reply({ content: '❌ Le casino est désactivé sur ce serveur.', flags: 64 });
+    return true;
+}
 const { EmbedBuilder } = require('discord.js');
 const db = require('../../db/queries');
 const config = require('../../config');

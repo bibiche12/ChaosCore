@@ -10,6 +10,7 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 const db = require('../db/queries');
 const config = require('../config');
+const { decrypt } = require('../utils/crypto');
 
 // ============================================================
 // ÉTAT PAR GUILD
@@ -57,7 +58,6 @@ function resetLiveStats(guildId, commands = []) {
     for (const cmd of commands) {
         stats[cmd.stat_key] = 0;
     }
-    // Toujours garder les stats de base si pas de commandes configurées
     if (commands.length === 0) {
         stats.vies = 0; stats.morts = 0; stats.fails = 0; stats.peurs = 0; stats.karma = 0;
     }
@@ -75,12 +75,10 @@ function stopCurrentLive(guildId) {
     getGuildState(guildId).liveContestActive = false;
 }
 
-// Génère le résumé de fin de live avec les commandes configurées
 async function generateLiveStatsSummary(guildId, participants = 0) {
     const liveStats = getGuildState(guildId).liveStats;
     const s = getGuildState(guildId);
 
-    // Durée du live
     let duree = '';
     if (s.liveStartTime) {
         const ms = Date.now() - s.liveStartTime;
@@ -89,15 +87,15 @@ async function generateLiveStatsSummary(guildId, participants = 0) {
         duree = `${h}h${String(m).padStart(2, '0')}`;
     }
 
-    // Lire les commandes configurées depuis la DB
     let twitchSettings = null;
-    try {
-        twitchSettings = await db.getModuleSettings(guildId, 'twitch');
-    } catch {}
+    try { twitchSettings = await db.getModuleSettings(guildId, 'twitch'); } catch {}
 
     const commands = twitchSettings?.streamelements_commands || [];
     const recapEnabled = twitchSettings?.recap_on_live_end !== false;
     const liveChannelId = twitchSettings?.live_channel_id || '';
+    const recapFooter = twitchSettings?.recap_footer || 'Merci les Bibiches 🖤';
+    const includeDuration = twitchSettings?.recap_include_duration !== false;
+    const includeParticipants = twitchSettings?.recap_include_participants !== false;
 
     let statsLines = '';
     if (commands.length > 0) {
@@ -105,7 +103,6 @@ async function generateLiveStatsSummary(guildId, participants = 0) {
             .map(cmd => `${cmd.emoji || '📊'} ${cmd.label} : **${liveStats[cmd.stat_key] || 0}**`)
             .join('\n');
     } else {
-        // Stats par défaut
         statsLines =
             `❤️ Vies : **${liveStats.vies || 0}**\n` +
             `💀 Morts : **${liveStats.morts || 0}**\n` +
@@ -116,10 +113,10 @@ async function generateLiveStatsSummary(guildId, participants = 0) {
 
     const summary =
         `📊 **Résumé du live**\n\n` +
-        (duree ? `⏱️ Durée : **${duree}**\n` : '') +
-        `👥 Participants actifs : **${participants}**\n\n` +
+        (includeDuration && duree ? `⏱️ Durée : **${duree}**\n` : '') +
+        (includeParticipants ? `👥 Participants actifs : **${participants}**\n\n` : '\n') +
         statsLines + '\n\n' +
-        `Merci les Bibiches 🖤`;
+        recapFooter;
 
     return { summary, recapEnabled, liveChannelId };
 }
@@ -142,16 +139,17 @@ async function getAppAccessToken() {
 // EVENTSUB — CHANNEL POINTS
 // ============================================================
 
-async function createEventSubSubscription(sessionId) {
-    const token = process.env.TWITCH_USER_ACCESS_TOKEN;
-    const broadcasterId = process.env.TWITCH_BROADCASTER_ID;
-    if (!token || !broadcasterId) { console.log('⏸️ EventSub ignoré : token utilisateur ou broadcaster ID manquant'); return; }
+async function createEventSubSubscriptionWithToken(sessionId, token, broadcasterId) {
     await axios.post('https://api.twitch.tv/helix/eventsub/subscriptions', {
         type: 'channel.channel_points_custom_reward_redemption.add', version: '1',
         condition: { broadcaster_user_id: broadcasterId },
         transport: { method: 'websocket', session_id: sessionId },
     }, {
-        headers: { 'Client-ID': process.env.TWITCH_CLIENT_ID, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: {
+            'Client-ID': process.env.TWITCH_CLIENT_ID,
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
     });
     console.log('✅ EventSub récompenses Twitch connecté');
 }
@@ -161,14 +159,11 @@ async function handleChannelPointRedemption(event, guildId, sendContestLog) {
     const rewardName = String(event.reward?.title || '').trim();
     const userInput = event.user_input || '';
 
-    // Lire les récompenses depuis guild_module_settings (dashboard) d'abord
     const twitchSettings = await db.getModuleSettings(guildId, 'twitch').catch(() => null);
     const dbRewards = twitchSettings?.channel_point_rewards || [];
 
-    // Chercher dans les récompenses configurées en DB
     let rewardConfig = dbRewards.find(r => r.name === rewardName);
 
-    // Sinon fallback sur les récompenses hardcodées originales
     if (!rewardConfig) {
         const { REWARDS } = require('./twitch/rewards');
         const original = REWARDS[rewardName];
@@ -217,30 +212,50 @@ async function handleChannelPointRedemption(event, guildId, sendContestLog) {
 }
 
 function connectEventSub(guildId, sendContestLog) {
-    const token = process.env.TWITCH_USER_ACCESS_TOKEN;
-    const broadcasterId = process.env.TWITCH_BROADCASTER_ID;
-    if (!token || !broadcasterId) { console.log('⏸️ Twitch EventSub désactivé : variables manquantes'); return; }
+    // Lire le token depuis les settings du guild (dashboard) — déchiffré en mémoire
+    db.getModuleSettings(guildId, 'twitch').then(async (twitchSettings) => {
+        let token = process.env.TWITCH_USER_ACCESS_TOKEN; // fallback token global
+        let broadcasterId = process.env.TWITCH_BROADCASTER_ID;
 
-    socket = new WebSocket('wss://eventsub.wss.twitch.tv/ws');
-    socket.on('open', () => { console.log('🔌 Connexion EventSub WebSocket ouverte'); });
-    socket.on('message', async (raw) => {
-        try {
-            const payload = JSON.parse(raw.toString());
-            const messageType = payload.metadata?.message_type;
-            if (messageType === 'session_welcome') { await createEventSubSubscription(payload.payload.session.id); return; }
-            if (messageType === 'notification') {
-                if (payload.metadata?.subscription_type === 'channel.channel_points_custom_reward_redemption.add') {
-                    await handleChannelPointRedemption(payload.payload.event, guildId, sendContestLog);
+        // Token chiffré AES configuré depuis le dashboard → prioritaire
+        if (twitchSettings?.twitch_user_token_encrypted) {
+            const decrypted = decrypt(twitchSettings.twitch_user_token_encrypted);
+            if (decrypted) token = decrypted;
+        }
+        if (twitchSettings?.twitch_broadcaster_id) {
+            broadcasterId = twitchSettings.twitch_broadcaster_id;
+        }
+
+        if (!token || !broadcasterId) {
+            console.log(`⏸️ [${guildId}] EventSub désactivé : token ou broadcaster ID manquant`);
+            return;
+        }
+
+        socket = new WebSocket('wss://eventsub.wss.twitch.tv/ws');
+        socket.on('open', () => { console.log(`🔌 [${guildId}] EventSub WebSocket ouvert`); });
+        socket.on('message', async (raw) => {
+            try {
+                const payload = JSON.parse(raw.toString());
+                const messageType = payload.metadata?.message_type;
+                if (messageType === 'session_welcome') {
+                    await createEventSubSubscriptionWithToken(payload.payload.session.id, token, broadcasterId);
                 }
-            }
-            if (messageType === 'session_reconnect') {
-                const reconnectUrl = payload.payload.session.reconnect_url;
-                if (reconnectUrl) { socket.close(); socket = new WebSocket(reconnectUrl); }
-            }
-        } catch (error) { console.error('❌ Erreur EventSub message:', error.message); }
+                if (messageType === 'notification') {
+                    if (payload.metadata?.subscription_type === 'channel.channel_points_custom_reward_redemption.add') {
+                        await handleChannelPointRedemption(payload.payload.event, guildId, sendContestLog);
+                    }
+                }
+                if (messageType === 'session_reconnect') {
+                    const reconnectUrl = payload.payload.session.reconnect_url;
+                    if (reconnectUrl) { socket.close(); socket = new WebSocket(reconnectUrl); }
+                }
+            } catch (error) { console.error('❌ Erreur EventSub message:', error.message); }
+        });
+        socket.on('close', () => { console.log(`⚠️ [${guildId}] EventSub WebSocket fermé`); });
+        socket.on('error', (error) => { console.error(`❌ [${guildId}] Erreur EventSub:`, error.message); });
+    }).catch(err => {
+        console.error(`❌ Erreur chargement settings EventSub [${guildId}]:`, err.message);
     });
-    socket.on('close', () => { console.log('⚠️ EventSub WebSocket fermé'); });
-    socket.on('error', (error) => { console.error('❌ Erreur EventSub WebSocket:', error.message); });
 }
 
 // ============================================================
@@ -263,11 +278,9 @@ function createTwitchChat(discordClient, guildId, twitchUsername, sendContestLog
             if (!twitchName) return;
             const cmd = message.toLowerCase().trim();
 
-            // Lire les commandes configurées depuis le dashboard
             const twitchSettings = await db.getModuleSettings(guildId, 'twitch').catch(() => null);
             const customCommands = twitchSettings?.streamelements_commands || [];
 
-            // Commandes configurées dans le dashboard
             if (customCommands.length > 0) {
                 const matched = customCommands.find(c => {
                     const aliases = (c.command || '').split(',').map(a => a.trim().toLowerCase()).filter(Boolean);
@@ -279,11 +292,9 @@ function createTwitchChat(discordClient, guildId, twitchUsername, sendContestLog
                     return;
                 }
             } else {
-                // Fallback commandes par défaut
                 if (handleDefaultStatCommand(cmd, twitchName, guildId)) return;
             }
 
-            // Commandes système
             if (cmd === '!resetstat') { await handleResetStatsCommand(twitchChat, discordClient, channel, twitchName, guildId); return; }
             if (cmd === '!stat' || cmd === '!stats') {
                 const participants = Object.keys(s.currentLive.users || {}).length;
@@ -306,7 +317,6 @@ function createTwitchChat(discordClient, guildId, twitchUsername, sendContestLog
     };
 }
 
-// Commandes par défaut si rien de configuré dans le dashboard
 function handleDefaultStatCommand(cmd, twitchName, guildId) {
     const s = getGuildState(guildId);
     const stats = s.liveStats;
@@ -404,7 +414,6 @@ async function checkTwitchLive(discordClient, guildId, twitchUsername, onLiveSta
         s.liveContestActive = true;
         resetCurrentLive(guildId);
 
-        // Initialiser les stats selon les commandes configurées
         const twitchSettings = await db.getModuleSettings(guildId, 'twitch').catch(() => null);
         const commands = twitchSettings?.streamelements_commands || [];
         resetLiveStats(guildId, commands);
