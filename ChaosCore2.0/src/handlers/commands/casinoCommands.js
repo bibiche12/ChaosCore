@@ -1,9 +1,3 @@
-// Vérifier si le casino est activé
-const economySettings = await db.getModuleSettings(interaction.guildId, 'economy').catch(() => null);
-if (economySettings?.casino_enabled === false) {
-    await interaction.reply({ content: '❌ Le casino est désactivé sur ce serveur.', flags: 64 });
-    return true;
-}
 const { EmbedBuilder } = require('discord.js');
 const db = require('../../db/queries');
 const config = require('../../config');
@@ -13,21 +7,25 @@ const MAX_BET = 150;
 const SCRATCH_COST = 10;
 const SCRATCH_PRIZES = [0, 0, 0, 2, 5, 10, 15, 20, 25, 50, 100];
 
-// Log en base pour le dashboard
 async function logCasino(guildId, userId, game, mise, gain) {
     try {
         await db.pool.query(
             `INSERT INTO casino_logs (guild_id, user_id, game, mise, gain) VALUES ($1, $2, $3, $4, $5)`,
             [guildId, userId, game, mise, gain]
         );
-    } catch (e) {
-        // Table pas encore créée — on ignore silencieusement
-    }
+    } catch (e) {}
 }
 
 async function handleCasinoCommand(interaction) {
     const cmd = interaction.commandName;
     if (!['pileouface', 'de', 'gratter'].includes(cmd)) return false;
+
+    // Vérifier si le casino est activé
+    const economySettings = await db.getModuleSettings(interaction.guildId, 'economy').catch(() => null);
+    if (economySettings?.casino_enabled === false) {
+        await interaction.reply({ content: '❌ Le casino est désactivé sur ce serveur.', flags: 64 });
+        return true;
+    }
 
     if (cmd === 'pileouface') await handleCoinFlip(interaction);
     if (cmd === 'de') await handleDice(interaction);
@@ -36,37 +34,17 @@ async function handleCasinoCommand(interaction) {
     return true;
 }
 
-// ============================================================
-// PILE OU FACE
-// ============================================================
-
 async function handleCoinFlip(interaction) {
     await interaction.deferReply({ flags: 64 });
-
     const mise = interaction.options.getInteger('mise');
     const choix = interaction.options.getString('choix');
-
-    if (mise < MIN_BET || mise > MAX_BET) {
-        return interaction.editReply(`❌ La mise doit être entre **${MIN_BET}** et **${MAX_BET}** ${config.MONEY_NAME}s.`);
-    }
-
+    if (mise < MIN_BET || mise > MAX_BET) return interaction.editReply(`❌ La mise doit être entre **${MIN_BET}** et **${MAX_BET}** ${config.MONEY_NAME}s.`);
     const data = await db.getUserPoints(interaction.guildId, interaction.user.id);
-    if (data.balance < mise) {
-        return interaction.editReply(`❌ Solde insuffisant. Tu as **${data.balance}** ${config.MONEY_NAME}s.`);
-    }
-
+    if (data.balance < mise) return interaction.editReply(`❌ Solde insuffisant. Tu as **${data.balance}** ${config.MONEY_NAME}s.`);
     const resultat = Math.random() < 0.5 ? 'pile' : 'face';
     const gagne = resultat === choix;
-
-    let newBalance;
-    if (gagne) {
-        newBalance = await db.addPoints(interaction.guildId, interaction.user.id, mise);
-    } else {
-        newBalance = await db.addPoints(interaction.guildId, interaction.user.id, -mise);
-    }
-
+    const newBalance = await db.addPoints(interaction.guildId, interaction.user.id, gagne ? mise : -mise);
     await logCasino(interaction.guildId, interaction.user.id, 'pileouface', mise, gagne ? mise : -mise);
-
     const embed = new EmbedBuilder()
         .setColor(gagne ? '#22c55e' : '#ef4444')
         .setTitle(gagne ? '🎉 Tu as gagné !' : '💸 Tu as perdu !')
@@ -77,44 +55,23 @@ async function handleCoinFlip(interaction) {
             { name: 'Nouveau solde', value: `💰 ${newBalance} ${config.MONEY_NAME}s`, inline: false },
         )
         .setFooter({ text: 'ChaosCore • Casino' });
-
     await interaction.editReply({ embeds: [embed] });
 }
 
-// ============================================================
-// DÉ
-// ============================================================
-
 async function handleDice(interaction) {
     await interaction.deferReply({ flags: 64 });
-
     const mise = interaction.options.getInteger('mise');
-
-    if (mise < MIN_BET || mise > MAX_BET) {
-        return interaction.editReply(`❌ La mise doit être entre **${MIN_BET}** et **${MAX_BET}** ${config.MONEY_NAME}s.`);
-    }
-
+    if (mise < MIN_BET || mise > MAX_BET) return interaction.editReply(`❌ La mise doit être entre **${MIN_BET}** et **${MAX_BET}** ${config.MONEY_NAME}s.`);
     const data = await db.getUserPoints(interaction.guildId, interaction.user.id);
-    if (data.balance < mise) {
-        return interaction.editReply(`❌ Solde insuffisant. Tu as **${data.balance}** ${config.MONEY_NAME}s.`);
-    }
-
+    if (data.balance < mise) return interaction.editReply(`❌ Solde insuffisant. Tu as **${data.balance}** ${config.MONEY_NAME}s.`);
     let deJoueur, deBot;
     do {
         deJoueur = Math.floor(Math.random() * 6) + 1;
         deBot = Math.floor(Math.random() * 6) + 1;
     } while (deJoueur === deBot);
-
     const gagne = deJoueur > deBot;
-    let newBalance;
-    if (gagne) {
-        newBalance = await db.addPoints(interaction.guildId, interaction.user.id, mise);
-    } else {
-        newBalance = await db.addPoints(interaction.guildId, interaction.user.id, -mise);
-    }
-
+    const newBalance = await db.addPoints(interaction.guildId, interaction.user.id, gagne ? mise : -mise);
     await logCasino(interaction.guildId, interaction.user.id, 'de', mise, gagne ? mise : -mise);
-
     const embed = new EmbedBuilder()
         .setColor(gagne ? '#22c55e' : '#ef4444')
         .setTitle(gagne ? '🎉 Tu as gagné !' : '💸 Tu as perdu !')
@@ -125,26 +82,15 @@ async function handleDice(interaction) {
             { name: 'Nouveau solde', value: `💰 ${newBalance} ${config.MONEY_NAME}s`, inline: false },
         )
         .setFooter({ text: 'ChaosCore • Casino' });
-
     await interaction.editReply({ embeds: [embed] });
 }
 
-// ============================================================
-// TICKET À GRATTER
-// ============================================================
-
 async function handleScratch(interaction) {
     await interaction.deferReply({ flags: 64 });
-
     const data = await db.getUserPoints(interaction.guildId, interaction.user.id);
-    if (data.balance < SCRATCH_COST) {
-        return interaction.editReply(`❌ Solde insuffisant. Un ticket coûte **${SCRATCH_COST}** ${config.MONEY_NAME}s. Tu as **${data.balance}**.`);
-    }
-
+    if (data.balance < SCRATCH_COST) return interaction.editReply(`❌ Solde insuffisant. Un ticket coûte **${SCRATCH_COST}** ${config.MONEY_NAME}s. Tu as **${data.balance}**.`);
     await db.addPoints(interaction.guildId, interaction.user.id, -SCRATCH_COST);
-
     const gain = SCRATCH_PRIZES[Math.floor(Math.random() * SCRATCH_PRIZES.length)];
-
     let newBalance;
     if (gain > 0) {
         newBalance = await db.addPoints(interaction.guildId, interaction.user.id, gain);
@@ -152,19 +98,13 @@ async function handleScratch(interaction) {
         const updated = await db.getUserPoints(interaction.guildId, interaction.user.id);
         newBalance = updated.balance;
     }
-
     await logCasino(interaction.guildId, interaction.user.id, 'gratter', SCRATCH_COST, gain - SCRATCH_COST);
-
-    // Générer 3 cases avec le vrai gain caché dedans
     const fakePool = SCRATCH_PRIZES.filter(p => p !== gain);
     const case1 = fakePool[Math.floor(Math.random() * fakePool.length)];
     const case2 = fakePool[Math.floor(Math.random() * fakePool.length)];
     const cases = [case1, case2];
-    const pos = Math.floor(Math.random() * 3);
-    cases.splice(pos, 0, gain);
-
+    cases.splice(Math.floor(Math.random() * 3), 0, gain);
     const gagne = gain > 0;
-
     const embed = new EmbedBuilder()
         .setColor(gagne ? '#f59e0b' : '#6b7280')
         .setTitle('🎟️ Ticket à gratter')
@@ -179,7 +119,6 @@ async function handleScratch(interaction) {
             { name: 'Nouveau solde', value: `💰 ${newBalance} ${config.MONEY_NAME}s`, inline: true },
         )
         .setFooter({ text: 'ChaosCore • Casino' });
-
     await interaction.editReply({ embeds: [embed] });
 }
 
