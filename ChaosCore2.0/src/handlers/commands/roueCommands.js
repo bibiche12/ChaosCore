@@ -30,7 +30,7 @@ async function handleRoueCommand(interaction) {
 
     // Pas de nom spécifié → liste les roues disponibles
     if (!nomDemande) {
-        const liste = roues.map((r, i) => `**${i + 1}.** ${r.name} — ${JSON.parse(r.segments).length} segments`).join('\n');
+        const liste = roues.map((r, i) => `**${i + 1}.** ${r.name} — ${(Array.isArray(r.segments) ? r.segments : JSON.parse(r.segments)).length} segments`).join('\n');
         await interaction.reply({
             embeds: [new EmbedBuilder()
                 .setColor('#9146ff')
@@ -56,7 +56,7 @@ async function handleRoueCommand(interaction) {
         return true;
     }
 
-    const segments = JSON.parse(roue.segments);
+    const segments = Array.isArray(roue.segments) ? roue.segments : JSON.parse(roue.segments);
     if (segments.length === 0) {
         await interaction.reply({ content: '❌ Cette roue n\'a aucun segment configuré.', ephemeral: true });
         return true;
