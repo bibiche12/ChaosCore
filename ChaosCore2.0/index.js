@@ -3,6 +3,7 @@ const { fetchConfiguredChannel } = require('./src/utils/serverSettings');
 
 const path = require('path');
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 
 const {
     Client,
@@ -351,9 +352,63 @@ client.on('guildMemberRemove', async (member) => {
 const app = express();
 app.use(express.json());
 
+// CORS — accepte uniquement les requetes du dashboard
+const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://chaoscore-dashboard-production.up.railway.app';
+app.use('/api/', (req, res, next) => {
+    const origin = req.headers.origin || req.headers.referer || '';
+    if (origin && !origin.startsWith(DASHBOARD_URL) && !origin.startsWith('http://localhost')) {
+        console.warn(`⚠️ Requete API origine suspecte: ${origin} sur ${req.path}`);
+        return res.status(403).json({ error: 'Origine non autorisee' });
+    }
+    next();
+});
+
+// Log de chaque appel API
+app.use('/api/', (req, res, next) => {
+    const ip = req.headers['x-forwarded-for'] || req.ip;
+    console.log(`📡 API ${req.method} ${req.path} depuis ${ip}`);
+    next();
+});
+
+// Validation guildId — doit etre une chaine numerique
+function validateGuildId(req, res, next) {
+    const { guildId } = req.params;
+    if (guildId && !/^\d{17,20}$/.test(guildId)) {
+        console.warn(`⚠️ guildId invalide recu: ${guildId}`);
+        return res.status(400).json({ error: 'guildId invalide' });
+    }
+    next();
+}
+
 function requireApiKey(req, res, next) {
     const key = req.headers['x-api-key'];
     if (!key || key !== process.env.INTERNAL_API_KEY) return res.status(401).json({ error: 'Non autorisé' });
+    next();
+}
+
+// Rate limiter — max 30 requetes par minute par IP sur les routes API
+const apiLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res) => {
+        console.warn(`⚠️ Rate limit atteint : ${req.ip} sur ${req.path}`);
+        res.status(429).json({ error: "Trop de requetes, ralentis." });
+    }
+});
+app.use("/api/", apiLimiter);
+
+// Verifie que le bot est bien dans le guild demande
+async function requireInGuild(req, res, next) {
+    const guildId = req.params.guildId;
+    if (!guildId) return res.status(400).json({ error: "guildId manquant" });
+    const guild = await client.guilds.fetch(guildId).catch(() => null);
+    if (!guild) {
+        console.warn(`⚠️ Tentative API sur guild inconnu : ${guildId} depuis ${req.ip}`);
+        return res.status(403).json({ error: "Guild inconnu ou bot absent" });
+    }
+    req.guild = guild;
     next();
 }
 
@@ -407,13 +462,13 @@ function getOverlaySettings(twitchSettings) {
 
 app.get('/test', (req, res) => res.send('TEST OK ✅'));
 
-app.post('/api/settings/reload/:guildId', requireApiKey, async (req, res) => {
+app.post('/api/settings/reload/:guildId', requireApiKey, validateGuildId, requireInGuild, async (req, res) => {
     const { guildId } = req.params;
     console.log(`🔄 [${guildId}] Rechargement des settings depuis le dashboard`);
     res.json({ ok: true, message: 'Settings rechargés' });
 });
 
-app.post('/api/twitch/restart/:guildId', requireApiKey, async (req, res) => {
+app.post('/api/twitch/restart/:guildId', requireApiKey, validateGuildId, requireInGuild, async (req, res) => {
     const { guildId } = req.params;
     try {
         await startTwitchForGuild(guildId);
@@ -423,7 +478,7 @@ app.post('/api/twitch/restart/:guildId', requireApiKey, async (req, res) => {
     }
 });
 
-app.post('/api/message/:guildId', requireApiKey, async (req, res) => {
+app.post('/api/message/:guildId', requireApiKey, validateGuildId, requireInGuild, async (req, res) => {
     const { guildId } = req.params;
     const { channelId, content } = req.body;
     if (!channelId || !content) return res.status(400).json({ error: 'channelId et content requis' });
@@ -437,7 +492,7 @@ app.post('/api/message/:guildId', requireApiKey, async (req, res) => {
     }
 });
 
-app.post('/api/support/panel/:guildId', requireApiKey, async (req, res) => {
+app.post('/api/support/panel/:guildId', requireApiKey, validateGuildId, requireInGuild, async (req, res) => {
     const { guildId } = req.params;
     try {
         const supportSettings = await db.getModuleSettings(guildId, 'support').catch(() => null);
@@ -467,7 +522,7 @@ app.post('/api/support/panel/:guildId', requireApiKey, async (req, res) => {
     }
 });
 
-app.post('/api/shop/setup/:guildId', requireApiKey, async (req, res) => {
+app.post('/api/shop/setup/:guildId', requireApiKey, validateGuildId, requireInGuild, async (req, res) => {
     const { guildId } = req.params;
     try {
         const shopSettings = await db.getModuleSettings(guildId, 'shop').catch(() => null);
@@ -484,7 +539,7 @@ app.post('/api/shop/setup/:guildId', requireApiKey, async (req, res) => {
     }
 });
 
-app.post('/api/autoroles/setup/:guildId', requireApiKey, async (req, res) => {
+app.post('/api/autoroles/setup/:guildId', requireApiKey, validateGuildId, requireInGuild, async (req, res) => {
     const { guildId } = req.params;
     try {
         const guild = await client.guilds.fetch(guildId).catch(() => null);
@@ -502,7 +557,7 @@ app.post('/api/autoroles/setup/:guildId', requireApiKey, async (req, res) => {
 });
 // Ajouter dans index.js du bot, avant le app.listen :
 
-app.post('/api/embed/send/:guildId', requireApiKey, async (req, res) => {
+app.post('/api/embed/send/:guildId', requireApiKey, validateGuildId, requireInGuild, async (req, res) => {
     const { guildId } = req.params;
     const { channelId, embed } = req.body;
     if (!channelId || !embed) return res.status(400).json({ ok: false, error: 'channelId et embed requis' });
@@ -529,7 +584,7 @@ app.post('/api/embed/send/:guildId', requireApiKey, async (req, res) => {
 });
 // Ajouter dans index.js du bot avant app.listen :
 
-app.post('/api/gaming-news/send/:guildId', requireApiKey, async (req, res) => {
+app.post('/api/gaming-news/send/:guildId', requireApiKey, validateGuildId, requireInGuild, async (req, res) => {
     const { guildId } = req.params;
     const { channelId, article } = req.body;
     if (!channelId || !article) return res.status(400).json({ ok: false, error: 'channelId et article requis' });
