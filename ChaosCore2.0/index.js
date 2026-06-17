@@ -527,6 +527,34 @@ app.post('/api/embed/send/:guildId', requireApiKey, async (req, res) => {
         res.status(500).json({ ok: false, error: err.message });
     }
 });
+// Ajouter dans index.js du bot avant app.listen :
+
+app.post('/api/gaming-news/send/:guildId', requireApiKey, async (req, res) => {
+    const { guildId } = req.params;
+    const { channelId, article } = req.body;
+    if (!channelId || !article) return res.status(400).json({ ok: false, error: 'channelId et article requis' });
+    try {
+        const channel = await client.channels.fetch(channelId).catch(() => null);
+        if (!channel) return res.status(404).json({ ok: false, error: 'Salon introuvable' });
+
+        const embed = new EmbedBuilder()
+            .setColor('#9146ff')
+            .setTitle(`${article.sourceEmoji || '📰'} ${article.title}`)
+            .setURL(article.url)
+            .setFooter({ text: `${article.source} • ChaosCore Actu Gaming` })
+            .setTimestamp(article.published_at ? new Date(article.published_at) : new Date());
+
+        if (article.summary) embed.setDescription(article.summary.substring(0, 400) + (article.summary.length > 400 ? '...' : ''));
+        if (article.image_url) embed.setImage(article.image_url);
+
+        await channel.send({ embeds: [embed] });
+        console.log(`📰 [${guildId}] Article envoyé : ${article.title}`);
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
 
 
 const PORT = process.env.PORT || 3000;

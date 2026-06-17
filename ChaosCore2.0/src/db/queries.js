@@ -324,6 +324,45 @@ async function initDatabase() {
             updated_at TIMESTAMP DEFAULT NOW()
         );
     `);
+// Ajouter dans initDatabase() dans src/db/queries.js avant le console.log :
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS gaming_news_settings (
+            guild_id TEXT PRIMARY KEY,
+            channel_id TEXT,
+            sources JSONB NOT NULL DEFAULT '["ign","eurogamer","jeuxvideo","gamespot","steam"]'::jsonb,
+            custom_sources JSONB NOT NULL DEFAULT '[]'::jsonb,
+            scans_this_week INTEGER NOT NULL DEFAULT 0,
+            last_scan_reset TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        );
+    `);
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS gaming_news_scans (
+            id SERIAL PRIMARY KEY,
+            guild_id TEXT NOT NULL,
+            filters JSONB NOT NULL DEFAULT '{}'::jsonb,
+            article_count INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+    `);
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS gaming_news_articles (
+            id SERIAL PRIMARY KEY,
+            guild_id TEXT NOT NULL,
+            scan_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            url TEXT NOT NULL,
+            source TEXT NOT NULL,
+            summary TEXT,
+            image_url TEXT,
+            published_at TIMESTAMP,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+    `);
 
 
     console.log('✅ Base de données initialisée');
