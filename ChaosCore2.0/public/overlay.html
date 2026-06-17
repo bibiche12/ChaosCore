@@ -3,120 +3,75 @@
 <head>
     <meta charset="UTF-8">
     <title>ChaosCore Overlay</title>
-
     <style>
-        /* ============================================================
-           BASE
-        ============================================================ */
-
-        body {
-            margin: 0;
-            overflow: hidden;
-            background: transparent;
-            font-family: Arial, sans-serif;
-        }
-
-        /* ============================================================
-           BANDEAU OVERLAY
-        ============================================================ */
+        body { margin:0; overflow:hidden; background:transparent; font-family:Arial,sans-serif; }
 
         #ticker {
             position: fixed;
             bottom: 0;
             left: 0;
-
             width: 100%;
             height: 46px;
-
             display: none;
             align-items: center;
-
             overflow: hidden;
-
-            background: rgba(0, 0, 0, 0.92);
-            border-top: 3px solid #9b5cff;
+            background: rgba(0,0,0,0.92);
+            border-top: 3px solid var(--border-color, #9b5cff);
         }
 
-        #ticker.visible {
-            display: flex;
-        }
-
-        /* ============================================================
-           TEXTE DÉFILANT
-        ============================================================ */
+        #ticker.visible { display: flex; }
 
         #track {
             padding-left: 100%;
-
             white-space: nowrap;
             color: white;
-            font-size: 24px;
+            font-size: var(--font-size, 24px);
             font-weight: bold;
-
-            animation: scrollText 35s linear infinite;
+            animation: scrollText var(--scroll-speed, 35s) linear infinite;
         }
 
         @keyframes scrollText {
-            from {
-                transform: translateX(0);
-            }
-
-            to {
-                transform: translateX(-100%);
-            }
+            from { transform: translateX(0); }
+            to { transform: translateX(-100%); }
         }
     </style>
 </head>
-
 <body>
-    <!-- ============================================================
-         BANDEAU
-    ============================================================ -->
-
     <div id="ticker">
         <div id="track"></div>
     </div>
 
     <script>
-        // ============================================================
-        // ÉLÉMENTS DOM
-        // ============================================================
-
         const ticker = document.getElementById('ticker');
         const track = document.getElementById('track');
 
-        // ============================================================
-        // FORMATAGE
-        // ============================================================
+        // Lire le guildId depuis l'URL (?guild=XXXXX)
+        const params = new URLSearchParams(window.location.search);
+        const guildId = params.get('guild') || '';
 
         function formatItem(item) {
-            const title = item.rewardName || 'Chaos';
-            const text = item.userInput || '';
-
-            return `${title} ${text}`.trim();
+            return `${item.rewardName || 'Chaos'} ${item.userInput || ''}`.trim();
         }
-
-        // ============================================================
-        // RAFRAÎCHISSEMENT OVERLAY
-        // ============================================================
 
         async function refreshOverlay() {
             try {
-                const response = await fetch(`/overlay/latest?t=${Date.now()}`, {
-                    cache: 'no-store',
-                });
-
+                const url = `/overlay/latest?t=${Date.now()}${guildId ? '&guild=' + guildId : ''}`;
+                const response = await fetch(url, { cache: 'no-store' });
                 const data = await response.json();
+
+                // Appliquer les settings visuels
+                if (data.settings) {
+                    document.documentElement.style.setProperty('--border-color', data.settings.border_color || '#9b5cff');
+                    document.documentElement.style.setProperty('--font-size', (data.settings.font_size || 24) + 'px');
+                    document.documentElement.style.setProperty('--scroll-speed', (data.settings.scroll_speed || 35) + 's');
+                }
 
                 if (!data.active || !data.items || data.items.length === 0) {
                     hideOverlay();
                     return;
                 }
 
-                const message = data.items
-                    .map(formatItem)
-                    .join('   -   ');
-
+                const message = data.items.map(formatItem).join('   -   ');
                 track.innerText = `${message}   -   ${message}`;
                 ticker.classList.add('visible');
             } catch (error) {
@@ -128,10 +83,6 @@
             ticker.classList.remove('visible');
             track.innerText = '';
         }
-
-        // ============================================================
-        // LANCEMENT
-        // ============================================================
 
         refreshOverlay();
         setInterval(refreshOverlay, 3000);

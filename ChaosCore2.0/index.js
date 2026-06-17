@@ -368,14 +368,56 @@ app.get('/overlay', (req, res) => res.redirect('/overlay-view'));
 
 app.get('/overlay/latest', async (req, res) => {
     try {
+        const guildId = req.query.guild || process.env.GUILD_ID;
+
+        // Lire les settings overlay du guild
+        const twitchSettings = await db.getModuleSettings(guildId, 'twitch').catch(() => null);
+
+        const showChannelPoints = twitchSettings?.overlay_show_channelpoints !== false;
+        const showShop          = twitchSettings?.overlay_show_shop          !== false;
+        const shopGage          = twitchSettings?.overlay_shop_gage          !== false;
+        const shopPhrase        = twitchSettings?.overlay_shop_phrase        !== false;
+        const shopRole          = twitchSettings?.overlay_shop_role          || false;
+
         const events = await db.getLatestOverlayEvents(20);
-        if (!events || events.length === 0) return res.json({ active: false, items: [] });
-        return res.json({ active: true, items: events.map(event => ({ id: event.id, source: event.source, rewardName: event.title, userInput: event.text || '', author: event.author || '', createdAt: event.created_at })) });
+        if (!events || events.length === 0) return res.json({ active: false, items: [], settings: getOverlaySettings(twitchSettings) });
+
+        // Filtrer selon les préférences
+        const filtered = events.filter(event => {
+            if (event.source === 'twitch') return showChannelPoints;
+            if (event.source === 'gage')   return showShop && shopGage;
+            if (event.source === 'phrase') return showShop && shopPhrase;
+            if (event.source === 'role')   return showShop && shopRole;
+            return showShop; // autres types boutique
+        });
+
+        if (filtered.length === 0) return res.json({ active: false, items: [], settings: getOverlaySettings(twitchSettings) });
+
+        return res.json({
+            active: true,
+            settings: getOverlaySettings(twitchSettings),
+            items: filtered.map(event => ({
+                id: event.id,
+                source: event.source,
+                rewardName: event.title,
+                userInput: event.text || '',
+                author: event.author || '',
+                createdAt: event.created_at,
+            })),
+        });
     } catch (error) {
         console.error('❌ Erreur route /overlay/latest:', error);
         return res.status(500).json({ active: false, items: [] });
     }
 });
+
+function getOverlaySettings(twitchSettings) {
+    return {
+        border_color:  twitchSettings?.overlay_border_color  || '#9b5cff',
+        font_size:     twitchSettings?.overlay_font_size      || 24,
+        scroll_speed:  twitchSettings?.overlay_scroll_speed   || 35,
+    };
+}
 
 app.get('/test', (req, res) => res.send('TEST OK ✅'));
 
