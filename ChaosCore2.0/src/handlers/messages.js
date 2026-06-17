@@ -1,3 +1,7 @@
+// ============================================================
+// IMPORTS
+// ============================================================
+
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 const config = require('../config');
@@ -20,9 +24,14 @@ setInterval(() => {
 // DISBOARD
 // ============================================================
 
-function isDisboardBumpDone(message) {
+async function isDisboardBumpDone(message) {
     if (message.author.id !== '302050872383242240') return false;
-    if (message.channel.id !== config.DISBOARD_CHANNEL_ID) return false;
+
+    // Vérifier le bon salon depuis settings dashboard ou config
+    const bumpSettings = await db.getModuleSettings(message.guild?.id, 'bump').catch(() => null);
+    const expectedChannelId = bumpSettings?.channel_id || config.DISBOARD_CHANNEL_ID;
+    if (message.channel.id !== expectedChannelId) return false;
+
     const fullText = [
         message.content || '',
         ...message.embeds.map(e => `${e.title || ''} ${e.description || ''} ${e.footer?.text || ''}`),
@@ -30,27 +39,46 @@ function isDisboardBumpDone(message) {
     return fullText.includes('Bump effectué');
 }
 
-async function sendDisboardReminder(discordClient, channelId = config.DISBOARD_CHANNEL_ID) {
-    const channel = await discordClient.channels.fetch(channelId).catch(() => null);
+async function sendDisboardReminder(discordClient, fallbackChannelId) {
+    const bumpSettings = await db.getModuleSettings(process.env.GUILD_ID, 'bump').catch(() => null);
+
+    const enabled = bumpSettings?.bump_enabled !== false;
+    if (!enabled) return;
+
+    // Salon : settings dashboard > fallback paramètre > config.js
+    const targetChannelId = bumpSettings?.channel_id || fallbackChannelId || config.DISBOARD_CHANNEL_ID;
+    const channel = await discordClient.channels.fetch(targetChannelId).catch(() => null);
     if (!channel) return;
-    await channel.send(
-        `⏰ **Rappel Disboard**\n\nLe dernier bump a été effectué il y a 2h.\nVous pouvez refaire \`/bump\` maintenant. 🦌`
-    ).catch(console.error);
+
+    // Message configurable avec variable {ping}
+    let message = bumpSettings?.reminder_message
+        || '⏰ **Rappel Disboard**\n\nLe dernier bump a été effectué il y a 2h.\nVous pouvez refaire `/bump` maintenant. 🦌';
+
+    // Ping optionnel
+    const pingEnabled = bumpSettings?.ping_enabled;
+    const pingRoleId  = bumpSettings?.ping_role_id;
+    if (pingEnabled && pingRoleId) {
+        message = message.replace('{ping}', `<@&${pingRoleId}>`);
+    } else {
+        message = message.replace('{ping}', '');
+    }
+
+    await channel.send(message).catch(console.error);
 }
 
-async function scheduleDisboardReminder(discordClient, delay) {
+async function scheduleDisboardReminder(discordClient, delay, fallbackChannelId) {
     if (disboardReminderTimeout) clearTimeout(disboardReminderTimeout);
     disboardReminderTimeout = setTimeout(async () => {
-        await sendDisboardReminder(discordClient);
+        await sendDisboardReminder(discordClient, fallbackChannelId);
     }, delay);
 }
 
 async function handleDisboardReminder(message, discordClient) {
     if (disboardReminderTimeout) clearTimeout(disboardReminderTimeout);
     const nextBumpAt = Date.now() + config.DISBOARD_INTERVAL_MS;
-    await db.saveNextBump(message.guild.id, config.DISBOARD_CHANNEL_ID, nextBumpAt);
+    await db.saveNextBump(message.guild.id, message.channel.id, nextBumpAt);
     console.log('📌 Bump Disboard détecté. Rappel enregistré en base et programmé dans 2h.');
-    await scheduleDisboardReminder(discordClient, config.DISBOARD_INTERVAL_MS);
+    await scheduleDisboardReminder(discordClient, config.DISBOARD_INTERVAL_MS, message.channel.id);
 }
 
 async function restoreDisboardReminder(discordClient) {
@@ -61,7 +89,7 @@ async function restoreDisboardReminder(discordClient) {
         await sendDisboardReminder(discordClient, saved.channel_id);
         return;
     }
-    await scheduleDisboardReminder(discordClient, delay);
+    await scheduleDisboardReminder(discordClient, delay, saved.channel_id);
     console.log(`🔁 Rappel Disboard restauré. Prochain rappel dans ${Math.round(delay / 60000)} min.`);
 }
 
@@ -167,14 +195,12 @@ async function handleAntiSpam(message, discordClient) {
 
     const guildId = message.guild.id;
 
-    // Lire les settings sécurité depuis le dashboard
     const securitySettings = await db.getModuleSettings(guildId, 'security').catch(() => null);
 
     const securityEnabled = securitySettings?.security_enabled !== false;
     const antiSpamEnabled = securitySettings?.anti_spam_enabled !== false;
     if (!securityEnabled || !antiSpamEnabled) return false;
 
-    // Limites depuis dashboard, fallback sur config
     const messageLimit = securitySettings?.spam_message_limit || config.ANTI_SPAM_MESSAGE_LIMIT;
     const messageWindow = (securitySettings?.spam_time_window || 10) * 1000;
     const linkLimit = securitySettings?.link_limit || config.ANTI_SPAM_LINK_LIMIT;
@@ -182,7 +208,6 @@ async function handleAntiSpam(message, discordClient) {
     const fileLimit = securitySettings?.file_limit || config.ANTI_SPAM_FILE_LIMIT;
     const timeoutMs = (securitySettings?.spam_mute_duration || 10) * 60 * 1000;
 
-    // Whitelist liens depuis dashboard
     const linkWhitelist = securitySettings?.link_whitelist
         ? securitySettings.link_whitelist.split('\n').map(s => s.trim()).filter(Boolean)
         : ['discord.gg', 'twitch.tv', 'youtube.com'];
@@ -195,7 +220,6 @@ async function handleAntiSpam(message, discordClient) {
 
     data.messages.push(now);
 
-    // Vérifier si le lien est dans la whitelist
     const content = message.content || '';
     if (hasLink(content)) {
         const isWhitelisted = linkWhitelist.some(domain => content.includes(domain));
@@ -205,15 +229,15 @@ async function handleAntiSpam(message, discordClient) {
     if (message.attachments.size > 0) data.files.push(now);
 
     data.messages = data.messages.filter(t => now - t <= messageWindow);
-    data.links = data.links.filter(t => now - t <= linkWindow);
-    data.files = data.files.filter(t => now - t <= linkWindow);
+    data.links    = data.links.filter(t => now - t <= linkWindow);
+    data.files    = data.files.filter(t => now - t <= linkWindow);
 
     spamTracker.set(userId, data);
 
     let reason = null;
     if (data.messages.length >= messageLimit) reason = 'spam de messages';
-    else if (data.links.length >= linkLimit) reason = 'spam de liens';
-    else if (data.files.length >= fileLimit) reason = 'spam de fichiers';
+    else if (data.links.length >= linkLimit)   reason = 'spam de liens';
+    else if (data.files.length >= fileLimit)   reason = 'spam de fichiers';
 
     if (!reason) return false;
 
@@ -224,7 +248,6 @@ async function handleAntiSpam(message, discordClient) {
         `Par sécurité, tu es temporairement mute. La Team vérifiera si besoin.`
     ).catch(() => null);
 
-    // Salon de logs depuis dashboard ou config
     const logsChannelId = securitySettings?.logs_channel_id || config.SECURITY_LOG_CHANNEL_ID;
     const securityChannel = await discordClient.channels.fetch(logsChannelId).catch(() => null);
     if (securityChannel) {
@@ -253,7 +276,8 @@ async function handleAntiSpam(message, discordClient) {
 async function handleMessage(message, discordClient, sendLog, pendingEmojiRequests) {
     if (!message.guild) return;
 
-    if (isDisboardBumpDone(message)) {
+    // isDisboardBumpDone est maintenant async
+    if (await isDisboardBumpDone(message)) {
         await handleDisboardReminder(message, discordClient);
         return;
     }

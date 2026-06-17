@@ -219,6 +219,17 @@ const commandDefinitions = [
         .setName('gratter')
         .setDescription('Acheter un ticket à gratter — coût fixe : 10'),
 
+        // Ajouter dans commandsDefinitions.js avant le .map(c => c.toJSON()) :
+
+new SlashCommandBuilder()
+    .setName('roue')
+    .setDescription('Tourner une roue de défi')
+    .addStringOption(o =>
+        o.setName('nom')
+            .setDescription('Nom de la roue à tourner (laisser vide pour voir la liste)')
+            .setRequired(false)
+    ),
+
 ].map(c => c.toJSON());
 
 module.exports = {

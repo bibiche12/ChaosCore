@@ -293,6 +293,38 @@ async function initDatabase() {
         created_at TIMESTAMP DEFAULT NOW()
     )
 `);
+// Ajouter dans initDatabase() avant le console.log('✅ Base de données initialisée') :
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS embed_templates (
+            id SERIAL PRIMARY KEY,
+            guild_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            title TEXT,
+            description TEXT,
+            color TEXT DEFAULT '#9146ff',
+            image_url TEXT,
+            thumbnail_url TEXT,
+            author_name TEXT,
+            author_icon TEXT,
+            footer_text TEXT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        );
+    `);
+// Ajouter dans initDatabase() dans src/db/queries.js avant le console.log :
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS roues (
+            id SERIAL PRIMARY KEY,
+            guild_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            segments JSONB NOT NULL DEFAULT '[]'::jsonb,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        );
+    `);
+
 
     console.log('✅ Base de données initialisée');
 }

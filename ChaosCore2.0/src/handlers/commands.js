@@ -18,6 +18,7 @@ const { handleAdminCommand } = require('./commands/adminCommands');
 const { handleSupportTicketCommand } = require('./commands/supportTicketCommands');
 const { handleBirthdayCommand } = require('./commands/birthdayCommands');
 const { handleCasinoCommand } = require('./commands/casinoCommands');
+const { handleRoueCommand } = require('./commands/roueCommands');
 
 // ============================================================
 // HANDLER PRINCIPAL
@@ -96,6 +97,7 @@ async function handleCommand(interaction, services) {
     if (await handleCasinoCommand(interaction)) {
         return;
     }
+    if (await handleRoueCommand(interaction)) return;
 
     // ------------------------------------------------------------
     // ADMINISTRATION

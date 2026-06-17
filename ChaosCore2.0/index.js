@@ -20,6 +20,7 @@ const security = require('./src/services/security');
 const config = require('./src/config');
 const db = require('./src/db/queries');
 const twitchService = require('./src/services/twitch');
+const youtubeService = require('./src/services/youtube');
 
 const { setupShop, processLivePhrases } = require('./src/services/shop');
 const { handleCommand, commandDefinitions } = require('./src/handlers/commands');
@@ -170,21 +171,13 @@ function isInAutoScanWindow() {
 async function handleLiveEndAuto(guildId) {
     const liveState = twitchService.getLiveState(guildId);
     const participants = Object.keys(liveState.currentLive.users || {}).length;
-
-    // generateLiveStatsSummary est maintenant async
     const { summary, recapEnabled, liveChannelId } = await twitchService.generateLiveStatsSummary(guildId, participants);
-
     twitchService.stopCurrentLive(guildId);
-
-    // Toujours envoyer dans le salon contest/logs
     await sendContestLog(`⚫ **Live terminé automatiquement**\n\n` + summary, guildId).catch(() => null);
-
-    // Envoyer le récap public dans le salon live si activé depuis le dashboard
     if (recapEnabled && liveChannelId) {
         const channel = await client.channels.fetch(liveChannelId).catch(() => null);
         if (channel) await channel.send(summary).catch(() => null);
     }
-
     console.log(`⚫ [${guildId}] Fin de live détectée automatiquement`);
 }
 
@@ -231,6 +224,7 @@ client.once('clientReady', async () => {
     await registerCommands();
     await restoreDisboardReminder(client);
     for (const [guildId] of client.guilds.cache) { await startTwitchForGuild(guildId); }
+    for (const [guildId] of client.guilds.cache) { youtubeService.startYoutubeForGuild(client, guildId); }
     setInterval(cleanExpiredRoles, 10 * 60 * 1000);
     cleanExpiredRoles();
     setInterval(() => { handleMonthlyBonus().catch(console.error); }, 60 * 60 * 1000);
@@ -369,30 +363,22 @@ app.get('/overlay', (req, res) => res.redirect('/overlay-view'));
 app.get('/overlay/latest', async (req, res) => {
     try {
         const guildId = req.query.guild || process.env.GUILD_ID;
-
-        // Lire les settings overlay du guild
         const twitchSettings = await db.getModuleSettings(guildId, 'twitch').catch(() => null);
-
         const showChannelPoints = twitchSettings?.overlay_show_channelpoints !== false;
         const showShop          = twitchSettings?.overlay_show_shop          !== false;
         const shopGage          = twitchSettings?.overlay_shop_gage          !== false;
         const shopPhrase        = twitchSettings?.overlay_shop_phrase        !== false;
         const shopRole          = twitchSettings?.overlay_shop_role          || false;
-
         const events = await db.getLatestOverlayEvents(20);
         if (!events || events.length === 0) return res.json({ active: false, items: [], settings: getOverlaySettings(twitchSettings) });
-
-        // Filtrer selon les préférences
         const filtered = events.filter(event => {
             if (event.source === 'twitch') return showChannelPoints;
             if (event.source === 'gage')   return showShop && shopGage;
             if (event.source === 'phrase') return showShop && shopPhrase;
             if (event.source === 'role')   return showShop && shopRole;
-            return showShop; // autres types boutique
+            return showShop;
         });
-
         if (filtered.length === 0) return res.json({ active: false, items: [], settings: getOverlaySettings(twitchSettings) });
-
         return res.json({
             active: true,
             settings: getOverlaySettings(twitchSettings),
@@ -413,9 +399,9 @@ app.get('/overlay/latest', async (req, res) => {
 
 function getOverlaySettings(twitchSettings) {
     return {
-        border_color:  twitchSettings?.overlay_border_color  || '#9b5cff',
-        font_size:     twitchSettings?.overlay_font_size      || 24,
-        scroll_speed:  twitchSettings?.overlay_scroll_speed   || 35,
+        border_color:  twitchSettings?.overlay_border_color || '#9b5cff',
+        font_size:     twitchSettings?.overlay_font_size     || 24,
+        scroll_speed:  twitchSettings?.overlay_scroll_speed  || 35,
     };
 }
 
@@ -451,7 +437,6 @@ app.post('/api/message/:guildId', requireApiKey, async (req, res) => {
     }
 });
 
-// API — SUPPORT TICKET PANNEAU
 app.post('/api/support/panel/:guildId', requireApiKey, async (req, res) => {
     const { guildId } = req.params;
     try {
@@ -482,7 +467,6 @@ app.post('/api/support/panel/:guildId', requireApiKey, async (req, res) => {
     }
 });
 
-// API — BOUTIQUE SETUP
 app.post('/api/shop/setup/:guildId', requireApiKey, async (req, res) => {
     const { guildId } = req.params;
     try {
@@ -500,7 +484,6 @@ app.post('/api/shop/setup/:guildId', requireApiKey, async (req, res) => {
     }
 });
 
-// API — AUTOROLES SETUP
 app.post('/api/autoroles/setup/:guildId', requireApiKey, async (req, res) => {
     const { guildId } = req.params;
     try {
@@ -517,6 +500,34 @@ app.post('/api/autoroles/setup/:guildId', requireApiKey, async (req, res) => {
         res.status(500).json({ ok: false, error: err.message });
     }
 });
+// Ajouter dans index.js du bot, avant le app.listen :
+
+app.post('/api/embed/send/:guildId', requireApiKey, async (req, res) => {
+    const { guildId } = req.params;
+    const { channelId, embed } = req.body;
+    if (!channelId || !embed) return res.status(400).json({ ok: false, error: 'channelId et embed requis' });
+    try {
+        const channel = await client.channels.fetch(channelId).catch(() => null);
+        if (!channel) return res.status(404).json({ ok: false, error: 'Salon introuvable' });
+
+        const { EmbedBuilder } = require('discord.js');
+        const discordEmbed = new EmbedBuilder()
+            .setColor(embed.color || '#9146ff');
+
+        if (embed.title)       discordEmbed.setTitle(embed.title);
+        if (embed.description) discordEmbed.setDescription(embed.description);
+        if (embed.image_url)   discordEmbed.setImage(embed.image_url);
+        if (embed.author_name) discordEmbed.setAuthor({ name: embed.author_name, iconURL: embed.author_icon || undefined });
+        if (embed.footer_text) discordEmbed.setFooter({ text: embed.footer_text });
+
+        await channel.send({ embeds: [discordEmbed] });
+        console.log(`📝 [${guildId}] Embed envoyé dans ${channelId}`);
+        res.json({ ok: true, message: 'Embed envoyé' });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => { console.log(`🌐 Overlay Web démarré sur le port ${PORT}`); });
