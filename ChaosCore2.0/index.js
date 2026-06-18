@@ -57,7 +57,7 @@ async function sendOnboardingLog(guildId, message) {
 }
 
 async function sendModLog(message, guildId) {
-    const channel = await fetchConfiguredChannel(client, guildId || process.env.GUILD_ID, 'mod_log_channel_id', config.MOD_LOG_CHANNEL_ID);
+    const channel = await fetchConfiguredChannel(client, guildId || process.env.GUILD_ID, 'global_logs_channel_id', config.MOD_LOG_CHANNEL_ID);
     if (channel) await channel.send(message).catch(console.error);
 }
 
