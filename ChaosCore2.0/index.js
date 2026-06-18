@@ -484,7 +484,7 @@ app.post('/api/shop/setup/:guildId', requireApiKey, async (req, res) => {
     }
 });
 
-app.post('/api/autoroles/setup/:guildId', requireApiKey, validateGuildId, requireInGuild, async (req, res) => {
+app.post('/api/autoroles/setup/:guildId', requireApiKey, requireInGuild, async (req, res) => {
     const { guildId } = req.params;
     try {
         const guild = req.guild;
