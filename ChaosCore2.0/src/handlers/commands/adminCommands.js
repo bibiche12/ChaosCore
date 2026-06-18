@@ -187,42 +187,49 @@ async function handleSetupRolesCommand(interaction, discordClient) {
     await interaction.deferReply({ flags: 64 });
 
     const guildId = interaction.guild.id;
+
+    // Lire le salon depuis la DB
     const autoroleSettings = await db.getModuleSettings(guildId, 'autoroles').catch(() => null);
     const rolesChannelId = autoroleSettings?.main_channel_id || config.SALON_ROLES_ID;
-
     const roleChannel = await discordClient.channels.fetch(rolesChannelId).catch(() => null);
-    if (!roleChannel) { await interaction.editReply('❌ Salon rôles introuvable. Configure-le dans le dashboard → Autorôles → Salons.'); return; }
+    if (!roleChannel) {
+        await interaction.editReply('❌ Salon rôles introuvable. Configure-le dans le dashboard → Autorôles → Salons.');
+        return;
+    }
 
-    await roleChannel.send({
-        embeds: [new EmbedBuilder().setColor(0x2f3136).setTitle('🔔 PINGS').setDescription(`Choisis les notifications que tu souhaites recevoir.\n\n📹 Ping - Live\n🎮 Ping - Game\n📰 Ping - Programme`)],
-        components: [new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('autorole_ping_live').setLabel('Ping - Live').setEmoji('📹').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('autorole_ping_game').setLabel('Ping - Game').setEmoji('🎮').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('autorole_ping_programme').setLabel('Ping - Programme').setEmoji('📰').setStyle(ButtonStyle.Secondary)
-        )],
-    });
+    // Lire les panneaux depuis la DB
+    const { getAutorolePanels } = require('../utils/guildSettings');
+    const panels = await getAutorolePanels(guildId);
 
-    await roleChannel.send({
-        embeds: [new EmbedBuilder().setColor(0x2f3136).setTitle('🎮 JEUX').setDescription(`Choisis les catégories de jeux qui t'intéressent.\n\n1️⃣ Jeu - Horreur\n2️⃣ Jeu - RPG\n3️⃣ Jeu - Tir\n4️⃣ Jeu - Sport`)],
-        components: [new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('autorole_game_horreur').setLabel('Horreur').setEmoji('1️⃣').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('autorole_game_rpg').setLabel('RPG').setEmoji('2️⃣').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('autorole_game_tir').setLabel('Tir').setEmoji('3️⃣').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('autorole_game_sport').setLabel('Sport').setEmoji('4️⃣').setStyle(ButtonStyle.Secondary)
-        )],
-    });
+    if (!panels || panels.length === 0) {
+        await interaction.editReply('❌ Aucun panneau configuré. Crée des panneaux dans le dashboard → Autorôles → Panneaux.');
+        return;
+    }
 
-    await roleChannel.send({
-        embeds: [new EmbedBuilder().setColor(0x2f3136).setTitle('🕹️ PLATEFORMES').setDescription(`Choisis tes plateformes.\n\n🟩 Xbox\n🟦 PS5\n🟨 PC\n🟥 Switch`)],
-        components: [new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('autorole_platform_xbox').setLabel('Xbox').setEmoji('🟩').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('autorole_platform_ps5').setLabel('PS5').setEmoji('🟦').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('autorole_platform_pc').setLabel('PC').setEmoji('🟨').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('autorole_platform_switch').setLabel('Switch').setEmoji('🟥').setStyle(ButtonStyle.Secondary)
-        )],
-    });
+    // Envoyer chaque panneau
+    let count = 0;
+    for (const panel of panels) {
+        if (!panel.roles || panel.roles.length === 0) continue;
 
-    await interaction.editReply('✅ Messages de rôles créés avec ChaosCore.');
+        const embed = new EmbedBuilder()
+            .setColor(0x9146ff)
+            .setTitle(panel.name)
+            .setDescription(panel.description || 'Choisis tes rôles.');
+
+        const buttons = panel.roles.slice(0, 5).map(role =>
+            new ButtonBuilder()
+                .setCustomId('autorole_db_' + role.id)
+                .setLabel(role.role_name)
+                .setEmoji(role.emoji || '🎭')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+        const row = new ActionRowBuilder().addComponents(buttons);
+        await roleChannel.send({ embeds: [embed], components: [row] });
+        count++;
+    }
+
+    await interaction.editReply('✅ ' + count + ' panneau(x) publiés depuis la DB !');
 }
 
 module.exports = { handleAdminCommand };

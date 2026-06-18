@@ -4,7 +4,7 @@
 // ============================================================
 
 const db = require('../db/queries');
-const config = require('../../config');
+const config = require('../config');
 
 // Cache en mémoire pour éviter trop de requêtes DB (TTL 60s)
 const cache = new Map();
