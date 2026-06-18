@@ -3,7 +3,6 @@ const { fetchConfiguredChannel } = require('./src/utils/serverSettings');
 
 const path = require('path');
 const express = require('express');
-const rateLimit = require('express-rate-limit');
 
 const {
     Client,
@@ -352,63 +351,9 @@ client.on('guildMemberRemove', async (member) => {
 const app = express();
 app.use(express.json());
 
-// CORS — accepte uniquement les requetes du dashboard
-const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://chaoscore-dashboard-production.up.railway.app';
-app.use('/api/', (req, res, next) => {
-    const origin = req.headers.origin || req.headers.referer || '';
-    if (origin && !origin.startsWith(DASHBOARD_URL) && !origin.startsWith('http://localhost')) {
-        console.warn(`⚠️ Requete API origine suspecte: ${origin} sur ${req.path}`);
-        return res.status(403).json({ error: 'Origine non autorisee' });
-    }
-    next();
-});
-
-// Log de chaque appel API
-app.use('/api/', (req, res, next) => {
-    const ip = req.headers['x-forwarded-for'] || req.ip;
-    console.log(`📡 API ${req.method} ${req.path} depuis ${ip}`);
-    next();
-});
-
-// Validation guildId — doit etre une chaine numerique
-function validateGuildId(req, res, next) {
-    const { guildId } = req.params;
-    if (guildId && !/^\d{17,20}$/.test(guildId)) {
-        console.warn(`⚠️ guildId invalide recu: ${guildId}`);
-        return res.status(400).json({ error: 'guildId invalide' });
-    }
-    next();
-}
-
 function requireApiKey(req, res, next) {
     const key = req.headers['x-api-key'];
     if (!key || key !== process.env.INTERNAL_API_KEY) return res.status(401).json({ error: 'Non autorisé' });
-    next();
-}
-
-// Rate limiter — max 30 requetes par minute par IP sur les routes API
-const apiLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 30,
-    standardHeaders: true,
-    legacyHeaders: false,
-    handler: (req, res) => {
-        console.warn(`⚠️ Rate limit atteint : ${req.ip} sur ${req.path}`);
-        res.status(429).json({ error: "Trop de requetes, ralentis." });
-    }
-});
-app.use("/api/", apiLimiter);
-
-// Verifie que le bot est bien dans le guild demande
-async function requireInGuild(req, res, next) {
-    const guildId = req.params.guildId;
-    if (!guildId) return res.status(400).json({ error: "guildId manquant" });
-    const guild = await client.guilds.fetch(guildId).catch(() => null);
-    if (!guild) {
-        console.warn(`⚠️ Tentative API sur guild inconnu : ${guildId} depuis ${req.ip}`);
-        return res.status(403).json({ error: "Guild inconnu ou bot absent" });
-    }
-    req.guild = guild;
     next();
 }
 
@@ -462,13 +407,13 @@ function getOverlaySettings(twitchSettings) {
 
 app.get('/test', (req, res) => res.send('TEST OK ✅'));
 
-app.post('/api/settings/reload/:guildId', requireApiKey, validateGuildId, requireInGuild, async (req, res) => {
+app.post('/api/settings/reload/:guildId', requireApiKey, async (req, res) => {
     const { guildId } = req.params;
     console.log(`🔄 [${guildId}] Rechargement des settings depuis le dashboard`);
     res.json({ ok: true, message: 'Settings rechargés' });
 });
 
-app.post('/api/twitch/restart/:guildId', requireApiKey, validateGuildId, requireInGuild, async (req, res) => {
+app.post('/api/twitch/restart/:guildId', requireApiKey, async (req, res) => {
     const { guildId } = req.params;
     try {
         await startTwitchForGuild(guildId);
@@ -478,7 +423,7 @@ app.post('/api/twitch/restart/:guildId', requireApiKey, validateGuildId, require
     }
 });
 
-app.post('/api/message/:guildId', requireApiKey, validateGuildId, requireInGuild, async (req, res) => {
+app.post('/api/message/:guildId', requireApiKey, async (req, res) => {
     const { guildId } = req.params;
     const { channelId, content } = req.body;
     if (!channelId || !content) return res.status(400).json({ error: 'channelId et content requis' });
@@ -492,7 +437,7 @@ app.post('/api/message/:guildId', requireApiKey, validateGuildId, requireInGuild
     }
 });
 
-app.post('/api/support/panel/:guildId', requireApiKey, validateGuildId, requireInGuild, async (req, res) => {
+app.post('/api/support/panel/:guildId', requireApiKey, async (req, res) => {
     const { guildId } = req.params;
     try {
         const supportSettings = await db.getModuleSettings(guildId, 'support').catch(() => null);
@@ -522,7 +467,7 @@ app.post('/api/support/panel/:guildId', requireApiKey, validateGuildId, requireI
     }
 });
 
-app.post('/api/shop/setup/:guildId', requireApiKey, validateGuildId, requireInGuild, async (req, res) => {
+app.post('/api/shop/setup/:guildId', requireApiKey, async (req, res) => {
     const { guildId } = req.params;
     try {
         const shopSettings = await db.getModuleSettings(guildId, 'shop').catch(() => null);
@@ -542,22 +487,51 @@ app.post('/api/shop/setup/:guildId', requireApiKey, validateGuildId, requireInGu
 app.post('/api/autoroles/setup/:guildId', requireApiKey, validateGuildId, requireInGuild, async (req, res) => {
     const { guildId } = req.params;
     try {
-        const guild = await client.guilds.fetch(guildId).catch(() => null);
-        if (!guild) return res.status(404).json({ ok: false, error: 'Serveur introuvable' });
-        const roleChannel = await client.channels.fetch(config.SALON_ROLES_ID).catch(() => null);
-        if (!roleChannel) return res.status(404).json({ ok: false, error: 'Salon rôles introuvable' });
-        await roleChannel.send({ embeds: [new EmbedBuilder().setColor(0x2f3136).setTitle('🔔 PINGS').setDescription('Choisis les notifications que tu souhaites recevoir.\n\n📹 Ping - Live\n🎮 Ping - Game\n📰 Ping - Programme')], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('autorole_ping_live').setLabel('Ping - Live').setEmoji('📹').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('autorole_ping_game').setLabel('Ping - Game').setEmoji('🎮').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('autorole_ping_programme').setLabel('Ping - Programme').setEmoji('📰').setStyle(ButtonStyle.Secondary))] });
-        await roleChannel.send({ embeds: [new EmbedBuilder().setColor(0x2f3136).setTitle('🎮 JEUX').setDescription('Choisis les catégories de jeux.\n\n1️⃣ Horreur\n2️⃣ RPG\n3️⃣ Tir\n4️⃣ Sport')], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('autorole_game_horreur').setLabel('Horreur').setEmoji('1️⃣').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('autorole_game_rpg').setLabel('RPG').setEmoji('2️⃣').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('autorole_game_tir').setLabel('Tir').setEmoji('3️⃣').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('autorole_game_sport').setLabel('Sport').setEmoji('4️⃣').setStyle(ButtonStyle.Secondary))] });
-        await roleChannel.send({ embeds: [new EmbedBuilder().setColor(0x2f3136).setTitle('🕹️ PLATEFORMES').setDescription('Choisis tes plateformes.\n\n🟩 Xbox\n🟦 PS5\n🟨 PC\n🟥 Switch')], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('autorole_platform_xbox').setLabel('Xbox').setEmoji('🟩').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('autorole_platform_ps5').setLabel('PS5').setEmoji('🟦').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('autorole_platform_pc').setLabel('PC').setEmoji('🟨').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('autorole_platform_switch').setLabel('Switch').setEmoji('🟥').setStyle(ButtonStyle.Secondary))] });
-        console.log(`🎭 [${guildId}] Autorôles setup depuis le dashboard`);
-        res.json({ ok: true, message: 'Autorôles publiés' });
+        const guild = req.guild;
+
+        // Lire le salon depuis la DB
+        const { getRolesChannelId, getAutorolePanels } = require('./src/utils/guildSettings');
+        const rolesChannelId = await getRolesChannelId(guildId);
+        const roleChannel = await client.channels.fetch(rolesChannelId).catch(() => null);
+        if (!roleChannel) return res.status(404).json({ ok: false, error: `Salon rôles introuvable (ID: ${rolesChannelId}). Configure-le dans le dashboard.` });
+
+        // Lire les panneaux depuis la DB
+        const panels = await getAutorolePanels(guildId);
+        if (!panels || panels.length === 0) {
+            return res.status(400).json({ ok: false, error: 'Aucun panneau actif configuré pour ce serveur.' });
+        }
+
+        // Envoyer chaque panneau
+        for (const panel of panels) {
+            if (!panel.roles || panel.roles.length === 0) continue;
+
+            const embed = new EmbedBuilder()
+                .setColor(0x9146ff)
+                .setTitle(panel.name)
+                .setDescription(panel.description || 'Choisis tes rôles.');
+
+            const buttons = panel.roles.slice(0, 5).map(role =>
+                new ButtonBuilder()
+                    .setCustomId(`autorole_db_${role.id}`)
+                    .setLabel(role.role_name)
+                    .setEmoji(role.emoji || '🎭')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+            const row = new ActionRowBuilder().addComponents(buttons);
+            await roleChannel.send({ embeds: [embed], components: [row] });
+        }
+
+        console.log(`🎭 [${guildId}] ${panels.length} panneau(x) autorôles publiés depuis le dashboard`);
+        res.json({ ok: true, message: `${panels.length} panneau(x) publiés` });
     } catch (err) {
+        console.error(`❌ autoroles/setup erreur:`, err.message);
         res.status(500).json({ ok: false, error: err.message });
     }
 });
 // Ajouter dans index.js du bot, avant le app.listen :
 
-app.post('/api/embed/send/:guildId', requireApiKey, validateGuildId, requireInGuild, async (req, res) => {
+app.post('/api/embed/send/:guildId', requireApiKey, async (req, res) => {
     const { guildId } = req.params;
     const { channelId, embed } = req.body;
     if (!channelId || !embed) return res.status(400).json({ ok: false, error: 'channelId et embed requis' });
@@ -584,7 +558,7 @@ app.post('/api/embed/send/:guildId', requireApiKey, validateGuildId, requireInGu
 });
 // Ajouter dans index.js du bot avant app.listen :
 
-app.post('/api/gaming-news/send/:guildId', requireApiKey, validateGuildId, requireInGuild, async (req, res) => {
+app.post('/api/gaming-news/send/:guildId', requireApiKey, async (req, res) => {
     const { guildId } = req.params;
     const { channelId, article } = req.body;
     if (!channelId || !article) return res.status(400).json({ ok: false, error: 'channelId et article requis' });
