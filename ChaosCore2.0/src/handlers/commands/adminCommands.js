@@ -29,6 +29,8 @@ async function hasModeratorPower(member) {
 }
 
 async function requireTeam(interaction) {
+    // Bypass pour les administrateurs Discord
+    if (interaction.member.permissions.has('Administrator')) return true;
     if (!await hasTeamRole(interaction.member)) {
         await interaction.reply({ content: "❌ Tu n'as pas l'autorisation d'utiliser cette commande.", flags: 64 });
         return false;
@@ -37,6 +39,8 @@ async function requireTeam(interaction) {
 }
 
 async function requireModerator(interaction) {
+    // Bypass pour les administrateurs Discord
+    if (interaction.member.permissions.has('Administrator')) return true;
     if (!await hasModeratorPower(interaction.member)) {
         await interaction.reply({ content: "❌ Tu n'as pas l'autorisation d'utiliser cette commande.", flags: 64 });
         return false;
