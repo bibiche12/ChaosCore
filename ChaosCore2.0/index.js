@@ -47,10 +47,6 @@ function getRecentJoins(guildId) {
 
 const activeTwitchChats = new Map();
 
-// ============================================================
-// LOGS
-// ============================================================
-
 async function sendOnboardingLog(guildId, message) {
     const channel = await fetchConfiguredChannel(client, guildId, 'onboarding_log_channel_id', config.ONBOARDING_LOG_CHANNEL_ID);
     if (channel) await channel.send(message).catch(console.error);
@@ -70,10 +66,6 @@ async function sendContestLog(message, guildId) {
     const channel = await fetchConfiguredChannel(client, guildId || process.env.GUILD_ID, 'contest_log_channel_id', config.CONTEST_LOG_CHANNEL_ID);
     if (channel) await channel.send(message).catch(console.error);
 }
-
-// ============================================================
-// WELCOME / GOODBYE
-// ============================================================
 
 async function sendWelcomeMessage(member) {
     const guildId = member.guild.id;
@@ -104,10 +96,6 @@ async function sendGoodbyeMessage(member) {
     await channel.send(msg).catch(() => null);
 }
 
-// ============================================================
-// MAINTENANCE — RÔLES TEMPORAIRES
-// ============================================================
-
 async function cleanExpiredRoles() {
     const expiredRoles = await db.getExpiredTemporaryRoles();
     for (const row of expiredRoles) {
@@ -122,10 +110,6 @@ async function cleanExpiredRoles() {
         } catch (error) { console.error(`❌ Erreur suppression rôle temporaire #${row.id}:`, error); }
     }
 }
-
-// ============================================================
-// MAINTENANCE — BONUS MENSUEL
-// ============================================================
 
 async function handleMonthlyBonus() {
     const now = new Date();
@@ -147,20 +131,12 @@ async function handleMonthlyBonus() {
     }
 }
 
-// ============================================================
-// COMMANDES SLASH
-// ============================================================
-
 async function registerCommands() {
     console.log('📋 Commandes à enregistrer :', commandDefinitions.map(c => c.name));
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commandDefinitions });
     console.log('✅ Commandes slash enregistrées');
 }
-
-// ============================================================
-// TWITCH
-// ============================================================
 
 function isInAutoScanWindow() {
     const formatter = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', hour12: false });
@@ -214,10 +190,6 @@ async function startTwitchForGuild(guildId) {
     startTwitchLiveEndScan(guildId, usernameToUse);
 }
 
-// ============================================================
-// CLIENT READY
-// ============================================================
-
 client.once('clientReady', async () => {
     console.log(`✅ ChaosCore connecté en tant que ${client.user.tag}`);
     await db.initDatabase();
@@ -230,10 +202,6 @@ client.once('clientReady', async () => {
     setInterval(() => { handleMonthlyBonus().catch(console.error); }, 60 * 60 * 1000);
     handleMonthlyBonus().catch(console.error);
 });
-
-// ============================================================
-// INTERACTIONS
-// ============================================================
 
 client.on('interactionCreate', async (interaction) => {
     try {
@@ -253,16 +221,12 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// ============================================================
-// MESSAGES
-// ============================================================
-
 client.on('messageCreate', (message) => { handleMessage(message, client, sendLog, pendingEmojiRequests).catch(console.error); });
 
 client.on('messageDelete', async (message) => {
     try {
         if (!message.guild || message.author?.bot) return;
-        await sendModLog(`🗑️ **Message supprimé**\n\n👤 Auteur : ${message.author || 'Inconnu'}\n📍 Salon : ${message.channel}\n📝 Contenu :\n${message.content || '*Contenu indisponible*'}`);
+        await sendModLog(`🗑️ **Message supprimé**\n\n👤 Auteur : ${message.author || 'Inconnu'}\n📍 Salon : ${message.channel}\n📝 Contenu :\n${message.content || '*Contenu indisponible*'}`, message.guild.id);
     } catch (error) { console.error('❌ Erreur log messageDelete:', error); }
 });
 
@@ -270,13 +234,9 @@ client.on('messageUpdate', async (oldMessage, newMessage) => {
     try {
         if (!oldMessage.guild || oldMessage.author?.bot) return;
         if (oldMessage.content === newMessage.content) return;
-        await sendModLog(`✏️ **Message modifié**\n\n👤 Auteur : ${oldMessage.author}\n📍 Salon : ${oldMessage.channel}\n\n**Avant :**\n${oldMessage.content || '*Indisponible*'}\n\n**Après :**\n${newMessage.content || '*Indisponible*'}`);
+        await sendModLog(`✏️ **Message modifié**\n\n👤 Auteur : ${oldMessage.author}\n📍 Salon : ${oldMessage.channel}\n\n**Avant :**\n${oldMessage.content || '*Indisponible*'}\n\n**Après :**\n${newMessage.content || '*Indisponible*'}`, oldMessage.guild.id);
     } catch (error) { console.error('❌ Erreur log messageUpdate:', error); }
 });
-
-// ============================================================
-// ANTI-RAID
-// ============================================================
 
 async function triggerRaidAlert(guildId, members) {
     if (security.isRaidMode(guildId)) return;
@@ -287,50 +247,71 @@ async function triggerRaidAlert(guildId, members) {
     console.log(`🚨 [${guildId}] MODE RAID ACTIVÉ`);
 }
 
-// ============================================================
-// ONBOARDING + WELCOME
-// ============================================================
-
 client.on('guildMemberAdd', async (member) => {
     try {
-        await member.roles.add(config.ROLE_ETAPE_1_ID);
         const guildId = member.guild.id;
+
+        // Anti-raid check
         const recentJoins = getRecentJoins(guildId);
         const now = Date.now();
         recentJoins.push({ member, timestamp: now });
-        while (recentJoins.length && now - recentJoins[0].timestamp > config.ANTI_RAID_WINDOW_MS) recentJoins.shift();
-        if (recentJoins.length >= config.ANTI_RAID_THRESHOLD) await triggerRaidAlert(guildId, recentJoins.map(entry => entry.member));
+        const securitySettings = await db.getModuleSettings(guildId, 'security').catch(() => null);
+        const raidWindow = securitySettings?.anti_raid_window_ms || config.ANTI_RAID_WINDOW_MS;
+        const raidThreshold = securitySettings?.anti_raid_threshold || config.ANTI_RAID_THRESHOLD;
+        while (recentJoins.length && now - recentJoins[0].timestamp > raidWindow) recentJoins.shift();
+        if (recentJoins.length >= raidThreshold) await triggerRaidAlert(guildId, recentJoins.map(entry => entry.member));
+
+        // Rôle à l'arrivée — lu depuis la DB pour chaque guild
+        const serverSettings = await db.getServerSettings(guildId).catch(() => null);
+        const arrivalRoleId = serverSettings?.onboarding_role_etape1_id || (guildId === process.env.GUILD_ID ? config.ROLE_ETAPE_1_ID : null);
+        if (arrivalRoleId) {
+            await member.roles.add(arrivalRoleId).catch(() => null);
+            await sendOnboardingLog(guildId, `👋 **Nouveau membre arrivé**
+
+👤 Membre : ${member}
+🧩 Rôle ajouté : <@&${arrivalRoleId}>`).catch(() => null);
+        }
+
         await sendWelcomeMessage(member);
-        await sendOnboardingLog(guildId, `👋 **Nouveau membre arrivé**\n\n👤 Membre : ${member}\n🧩 Rôle ajouté : <@&${config.ROLE_ETAPE_1_ID}>`).catch(() => null);
-        console.log(`👋 Nouveau membre : ${member.user.tag} → Étape 1`);
-    } catch (error) { console.error('❌ Erreur guildMemberAdd onboarding:', error.message); }
+        console.log(`👋 Nouveau membre : ${member.user.tag} [${guildId}]`);
+    } catch (error) { console.error('❌ Erreur guildMemberAdd:', error.message); }
 });
 
 client.on('messageReactionAdd', async (reaction, user) => {
     try {
         if (user.bot) return;
-        if (security.isRaidMode(reaction.message?.guild?.id)) return;
+        const guildId = reaction.message?.guild?.id;
+        if (!guildId) return;
+        if (security.isRaidMode(guildId)) return;
         if (reaction.partial) await reaction.fetch().catch(() => null);
-        if (!reaction.message || reaction.message.id !== config.REGLEMENT_MESSAGE_ID) return;
-        if (reaction.emoji.name !== config.REGLEMENT_EMOJI_NAME) return;
+
+        // Onboarding par réaction — seulement si configuré en DB
+        const serverSettings = await db.getServerSettings(guildId).catch(() => null);
+        const reglementMessageId = serverSettings?.reglement_message_id || (guildId === process.env.GUILD_ID ? config.REGLEMENT_MESSAGE_ID : null);
+        const reglementEmoji = serverSettings?.reglement_emoji || (guildId === process.env.GUILD_ID ? config.REGLEMENT_EMOJI_NAME : null);
+        const roleEtape1 = serverSettings?.onboarding_role_etape1_id || (guildId === process.env.GUILD_ID ? config.ROLE_ETAPE_1_ID : null);
+        const roleEtape2 = serverSettings?.onboarding_role_etape2_id || (guildId === process.env.GUILD_ID ? config.ROLE_ETAPE_2_ID : null);
+
+        if (!reglementMessageId || !reglementEmoji) return;
+        if (!reaction.message || reaction.message.id !== reglementMessageId) return;
+        if (reaction.emoji.name !== reglementEmoji) return;
+
         const guild = reaction.message.guild;
         if (!guild) return;
         const member = await guild.members.fetch(user.id).catch(() => null);
         if (!member) return;
-        if (!member.roles.cache.has(config.ROLE_ETAPE_1_ID)) return;
-        await member.roles.remove(config.ROLE_ETAPE_1_ID).catch(() => null);
-        await member.roles.add(config.ROLE_ETAPE_2_ID);
+        if (roleEtape1 && !member.roles.cache.has(roleEtape1)) return;
+        if (roleEtape1) await member.roles.remove(roleEtape1).catch(() => null);
+        if (roleEtape2) await member.roles.add(roleEtape2).catch(() => null);
         await sendAgeChoiceMessage(member);
-        await sendOnboardingLog(member.guild.id, `✅ **Règlement accepté**\n\n👤 Membre : ${member}\n➖ Retiré : <@&${config.ROLE_ETAPE_1_ID}>\n➕ Ajouté : <@&${config.ROLE_ETAPE_2_ID}>`).catch(() => null);
+        await sendOnboardingLog(guildId, `✅ **Règlement accepté**
+
+👤 Membre : ${member}`).catch(() => null);
     } catch (error) { console.error('❌ Erreur messageReactionAdd onboarding:', error.message); }
 });
 
 async function sendAgeChoiceMessage(member) {
-    const guildId = member.guild.id;
-    const serverSettings = await db.getServerSettings(guildId).catch(() => null);
-    const rolesChannelId = serverSettings?.onboarding_roles_channel_id || (guildId === process.env.GUILD_ID ? config.SALON_ROLES_ID : null);
-    if (!rolesChannelId) return;
-    const rolesChannel = await client.channels.fetch(rolesChannelId).catch(() => null);
+    const rolesChannel = await client.channels.fetch(config.SALON_ROLES_ID).catch(() => null);
     if (!rolesChannel) return;
     await rolesChannel.send({
         content: `🦌 Bienvenue ${member} !\n\nPour continuer, choisis ton statut :\n\n🔞 **Mineur**\n✅ **Majeur**\n\nCette étape est obligatoire pour débloquer le serveur.`,
@@ -349,7 +330,7 @@ client.on('guildMemberRemove', async (member) => {
 });
 
 // ============================================================
-// SERVEUR WEB — OVERLAY + API INTERNE
+// SERVEUR WEB
 // ============================================================
 
 const app = express();
@@ -493,18 +474,44 @@ app.post('/api/autoroles/setup/:guildId', requireApiKey, async (req, res) => {
     try {
         const guild = await client.guilds.fetch(guildId).catch(() => null);
         if (!guild) return res.status(404).json({ ok: false, error: 'Serveur introuvable' });
-        const roleChannel = await client.channels.fetch(config.SALON_ROLES_ID).catch(() => null);
-        if (!roleChannel) return res.status(404).json({ ok: false, error: 'Salon rôles introuvable' });
-        await roleChannel.send({ embeds: [new EmbedBuilder().setColor(0x2f3136).setTitle('🔔 PINGS').setDescription('Choisis les notifications que tu souhaites recevoir.\n\n📹 Ping - Live\n🎮 Ping - Game\n📰 Ping - Programme')], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('autorole_ping_live').setLabel('Ping - Live').setEmoji('📹').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('autorole_ping_game').setLabel('Ping - Game').setEmoji('🎮').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('autorole_ping_programme').setLabel('Ping - Programme').setEmoji('📰').setStyle(ButtonStyle.Secondary))] });
-        await roleChannel.send({ embeds: [new EmbedBuilder().setColor(0x2f3136).setTitle('🎮 JEUX').setDescription('Choisis les catégories de jeux.\n\n1️⃣ Horreur\n2️⃣ RPG\n3️⃣ Tir\n4️⃣ Sport')], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('autorole_game_horreur').setLabel('Horreur').setEmoji('1️⃣').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('autorole_game_rpg').setLabel('RPG').setEmoji('2️⃣').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('autorole_game_tir').setLabel('Tir').setEmoji('3️⃣').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('autorole_game_sport').setLabel('Sport').setEmoji('4️⃣').setStyle(ButtonStyle.Secondary))] });
-        await roleChannel.send({ embeds: [new EmbedBuilder().setColor(0x2f3136).setTitle('🕹️ PLATEFORMES').setDescription('Choisis tes plateformes.\n\n🟩 Xbox\n🟦 PS5\n🟨 PC\n🟥 Switch')], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('autorole_platform_xbox').setLabel('Xbox').setEmoji('🟩').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('autorole_platform_ps5').setLabel('PS5').setEmoji('🟦').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('autorole_platform_pc').setLabel('PC').setEmoji('🟨').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('autorole_platform_switch').setLabel('Switch').setEmoji('🟥').setStyle(ButtonStyle.Secondary))] });
-        console.log(`🎭 [${guildId}] Autorôles setup depuis le dashboard`);
-        res.json({ ok: true, message: 'Autorôles publiés' });
+
+        const { getRolesChannelId, getAutorolePanels } = require('./src/utils/guildSettings');
+        const rolesChannelId = await getRolesChannelId(guildId);
+        const roleChannel = await client.channels.fetch(rolesChannelId).catch(() => null);
+        if (!roleChannel) return res.status(404).json({ ok: false, error: `Salon rôles introuvable (ID: ${rolesChannelId}). Configure-le dans le dashboard.` });
+
+        const panels = await getAutorolePanels(guildId);
+        if (!panels || panels.length === 0) {
+            return res.status(400).json({ ok: false, error: 'Aucun panneau actif configuré pour ce serveur.' });
+        }
+
+        for (const panel of panels) {
+            if (!panel.roles || panel.roles.length === 0) continue;
+
+            const embed = new EmbedBuilder()
+                .setColor(0x9146ff)
+                .setTitle(panel.name)
+                .setDescription(panel.description || 'Choisis tes rôles.');
+
+            const buttons = panel.roles.slice(0, 5).map(role =>
+                new ButtonBuilder()
+                    .setCustomId(`autorole_db_${role.id}`)
+                    .setLabel(role.role_name)
+                    .setEmoji(role.emoji || '🎭')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+            const row = new ActionRowBuilder().addComponents(buttons);
+            await roleChannel.send({ embeds: [embed], components: [row] });
+        }
+
+        console.log(`🎭 [${guildId}] ${panels.length} panneau(x) autorôles publiés depuis le dashboard`);
+        res.json({ ok: true, message: `${panels.length} panneau(x) publiés` });
     } catch (err) {
+        console.error(`❌ autoroles/setup erreur:`, err.message);
         res.status(500).json({ ok: false, error: err.message });
     }
 });
-// Ajouter dans index.js du bot, avant le app.listen :
 
 app.post('/api/embed/send/:guildId', requireApiKey, async (req, res) => {
     const { guildId } = req.params;
@@ -513,17 +520,12 @@ app.post('/api/embed/send/:guildId', requireApiKey, async (req, res) => {
     try {
         const channel = await client.channels.fetch(channelId).catch(() => null);
         if (!channel) return res.status(404).json({ ok: false, error: 'Salon introuvable' });
-
-        const { EmbedBuilder } = require('discord.js');
-        const discordEmbed = new EmbedBuilder()
-            .setColor(embed.color || '#9146ff');
-
+        const discordEmbed = new EmbedBuilder().setColor(embed.color || '#9146ff');
         if (embed.title)       discordEmbed.setTitle(embed.title);
         if (embed.description) discordEmbed.setDescription(embed.description);
         if (embed.image_url)   discordEmbed.setImage(embed.image_url);
         if (embed.author_name) discordEmbed.setAuthor({ name: embed.author_name, iconURL: embed.author_icon || undefined });
         if (embed.footer_text) discordEmbed.setFooter({ text: embed.footer_text });
-
         await channel.send({ embeds: [discordEmbed] });
         console.log(`📝 [${guildId}] Embed envoyé dans ${channelId}`);
         res.json({ ok: true, message: 'Embed envoyé' });
@@ -531,7 +533,6 @@ app.post('/api/embed/send/:guildId', requireApiKey, async (req, res) => {
         res.status(500).json({ ok: false, error: err.message });
     }
 });
-// Ajouter dans index.js du bot avant app.listen :
 
 app.post('/api/gaming-news/send/:guildId', requireApiKey, async (req, res) => {
     const { guildId } = req.params;
@@ -540,17 +541,14 @@ app.post('/api/gaming-news/send/:guildId', requireApiKey, async (req, res) => {
     try {
         const channel = await client.channels.fetch(channelId).catch(() => null);
         if (!channel) return res.status(404).json({ ok: false, error: 'Salon introuvable' });
-
         const embed = new EmbedBuilder()
             .setColor('#9146ff')
             .setTitle(`${article.sourceEmoji || '📰'} ${article.title}`)
             .setURL(article.url)
             .setFooter({ text: `${article.source} • ChaosCore Actu Gaming` })
             .setTimestamp(article.published_at ? new Date(article.published_at) : new Date());
-
         if (article.summary) embed.setDescription(article.summary.substring(0, 400) + (article.summary.length > 400 ? '...' : ''));
         if (article.image_url) embed.setImage(article.image_url);
-
         await channel.send({ embeds: [embed] });
         console.log(`📰 [${guildId}] Article envoyé : ${article.title}`);
         res.json({ ok: true });
@@ -558,8 +556,6 @@ app.post('/api/gaming-news/send/:guildId', requireApiKey, async (req, res) => {
         res.status(500).json({ ok: false, error: err.message });
     }
 });
-
-
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => { console.log(`🌐 Overlay Web démarré sur le port ${PORT}`); });
