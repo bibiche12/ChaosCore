@@ -8,28 +8,23 @@ const {
 const config = require('../../config');
 const db = require('../../db/queries');
 
-// Vérifie si le membre a un rôle admin/team depuis la DB ou le config
 async function hasTeamRole(member) {
     const guildId = member.guild.id;
     const serverSettings = await db.getServerSettings(guildId).catch(() => null);
     const teamRoleName = serverSettings?.team_role_name || config.TEAM_ROLE_NAME;
     const teamRoleId = serverSettings?.team_role_id || null;
-
     return member.roles.cache.some(role =>
         role.name === teamRoleName || (teamRoleId && role.id === teamRoleId)
     );
 }
 
-// Vérifie si le membre a le pouvoir de modération depuis la DB ou le config
 async function hasModeratorPower(member) {
     const guildId = member.guild.id;
     const securitySettings = await db.getModuleSettings(guildId, 'security').catch(() => null);
     const serverSettings = await db.getServerSettings(guildId).catch(() => null);
-
     const moderatorRoleId = securitySettings?.moderator_role_id
         || serverSettings?.moderator_role_id
         || config.MODERATOR_ROLE_ID;
-
     return member.roles.cache.has(moderatorRoleId) || await hasTeamRole(member);
 }
 
@@ -76,12 +71,14 @@ async function handleWarningCommand(interaction, discordClient) {
 
     const guildId = interaction.guild.id;
 
+    // Lire depuis guild_module_settings (dashboard) en priorité
     const securitySettings = await db.getModuleSettings(guildId, 'security').catch(() => null);
     const serverSettings = await db.getServerSettings(guildId).catch(() => null);
 
     const warningLimit = securitySettings?.warning_limit || config.WARNING_LIMIT;
     const warningWindowMs = (securitySettings?.warning_time_window || 24) * 60 * 60 * 1000;
 
+    // Rôle et salon warning — dashboard security d'abord, sinon server_settings, sinon config
     const warningRoleId = securitySettings?.warning_role_id
         || serverSettings?.warning_role_id
         || config.WARNING_ROLE_ID;
@@ -139,40 +136,9 @@ async function handleClearCommand(interaction) {
     if (!await requireModerator(interaction)) return;
     await interaction.deferReply({ flags: 64 });
     const amount = interaction.options.getInteger('nombre');
-
-    if (amount < 1 || amount > 100) {
-        await interaction.editReply({ content: '❌ Le nombre doit être entre 1 et 100.' });
-        return;
-    }
-
-    const messages = await interaction.channel.messages.fetch({ limit: amount }).catch(() => null);
-    if (!messages) {
-        await interaction.editReply({ content: '❌ Impossible de récupérer les messages.' });
-        return;
-    }
-
-    const twoWeeksAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
-    const deletable = messages.filter(m => m.createdTimestamp > twoWeeksAgo);
-    const tooOld = messages.size - deletable.size;
-
-    if (deletable.size === 0) {
-        await interaction.editReply({ content: '❌ Aucun message supprimable — ils ont tous plus de 14 jours.' });
-        return;
-    }
-
-    const deleted = await interaction.channel.bulkDelete(deletable, true).catch(err => {
-        console.error(`❌ Erreur bulkDelete: ${err.message}`);
-        return null;
-    });
-
-    if (!deleted) {
-        await interaction.editReply({ content: '❌ Erreur lors de la suppression. Vérifie les permissions du bot.' });
-        return;
-    }
-
-    let reply = `🧹 ${deleted.size} message(s) supprimé(s).`;
-    if (tooOld > 0) reply += ` (⚠️ ${tooOld} message(s) ignoré(s) car plus de 14 jours)`;
-    await interaction.editReply({ content: reply });
+    const deleted = await interaction.channel.bulkDelete(amount, true).catch(() => null);
+    if (!deleted) { await interaction.editReply({ content: '❌ Impossible de supprimer les messages.' }); return; }
+    await interaction.editReply({ content: `🧹 ${deleted.size} message(s) supprimé(s).` });
 }
 
 async function handleClearOverlayCommand(interaction) {
@@ -216,12 +182,8 @@ async function handleSetupRolesCommand(interaction, discordClient) {
     if (!await requireTeam(interaction)) return;
     await interaction.deferReply({ flags: 64 });
 
-    const guildId = interaction.guild.id;
-    const serverSettings = await db.getServerSettings(guildId).catch(() => null);
-    const rolesChannelId = serverSettings?.roles_channel_id || config.SALON_ROLES_ID;
-
-    const roleChannel = await discordClient.channels.fetch(rolesChannelId).catch(() => null);
-    if (!roleChannel) { await interaction.editReply('❌ Salon rôles introuvable. Configure-le dans le dashboard.'); return; }
+    const roleChannel = await discordClient.channels.fetch(config.SALON_ROLES_ID).catch(() => null);
+    if (!roleChannel) { await interaction.editReply('❌ Salon rôles introuvable.'); return; }
 
     await roleChannel.send({
         embeds: [new EmbedBuilder().setColor(0x2f3136).setTitle('🔔 PINGS').setDescription(`Choisis les notifications que tu souhaites recevoir.\n\n📹 Ping - Live\n🎮 Ping - Game\n📰 Ping - Programme`)],
