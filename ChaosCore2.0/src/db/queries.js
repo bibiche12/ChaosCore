@@ -415,10 +415,10 @@ async function getModuleSettings(guildId, moduleName) {
 module.exports = {
     pool,
     initDatabase,
-    getServerSettings,
     getModuleSettings,
 
     ...serverSettings,
+    getServerSettings, // Override — lit depuis guild_module_settings (dashboard)
     ...economy,
     ...tickets,
     ...twitch,
