@@ -1,7 +1,6 @@
 const config = require('../../config');
 const db = require('../../db/queries');
 
-// Rôles statiques en fallback si pas configurés dans le dashboard
 const STATIC_AUTOROLE_MAP = {
     autorole_ping_live:      config.ROLE_PING_LIVE_ID,
     autorole_ping_game:      config.ROLE_PING_GAME_ID,
@@ -19,8 +18,6 @@ const STATIC_AUTOROLE_MAP = {
 async function handleRoleButton(interaction) {
     const { customId, user, guild } = interaction;
 
-    // Vérifier d'abord les autorôles configurés via le dashboard (autorole_roles table)
-    // Le customId pour les autorôles du dashboard est de la forme : autorole_db_ROLE_ID
     if (customId.startsWith('autorole_db_')) {
         await interaction.deferReply({ flags: 64 });
         const roleId = customId.replace('autorole_db_', '');
@@ -28,17 +25,30 @@ async function handleRoleButton(interaction) {
         if (!member) { await interaction.editReply({ content: '❌ Membre introuvable.' }); return true; }
         const role = guild.roles.cache.get(roleId);
         if (!role) { await interaction.editReply({ content: '❌ Rôle introuvable.' }); return true; }
+
         if (member.roles.cache.has(roleId)) {
             await member.roles.remove(roleId).catch(() => null);
             await interaction.editReply({ content: `➖ Rôle retiré : **${role.name}**` });
         } else {
             await member.roles.add(roleId).catch(() => null);
+
+            // Vérifier si un rôle doit être retiré automatiquement
+            const { pool } = require('../../db/queries');
+            const result = await pool.query(
+                `SELECT remove_role_id FROM autorole_roles WHERE guild_id = $1 AND role_id = $2 AND active = true`,
+                [guild.id, roleId]
+            ).catch(() => null);
+
+            const removeRoleId = result?.rows?.[0]?.remove_role_id;
+            if (removeRoleId && member.roles.cache.has(removeRoleId)) {
+                await member.roles.remove(removeRoleId).catch(() => null);
+            }
+
             await interaction.editReply({ content: `✅ Rôle ajouté : **${role.name}**` });
         }
         return true;
     }
 
-    // Fallback sur les autorôles statiques
     const roleId = STATIC_AUTOROLE_MAP[customId];
     if (!roleId) return false;
 
