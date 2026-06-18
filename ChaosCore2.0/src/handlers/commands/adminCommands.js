@@ -218,7 +218,7 @@ async function handleSetupRolesCommand(interaction, discordClient) {
 
         const buttons = panel.roles.slice(0, 5).map(role =>
             new ButtonBuilder()
-                .setCustomId('autorole_db_' + role.id)
+                .setCustomId('autorole_db_' + role.role_id)
                 .setLabel(role.role_name)
                 .setEmoji(role.emoji || '🎭')
                 .setStyle(ButtonStyle.Secondary)
