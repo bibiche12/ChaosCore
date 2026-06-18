@@ -17,8 +17,13 @@ function buildOnboardingTwitchButtons() {
     );
 }
 
-function isTeamMember(member) {
-    return member.roles.cache.some(role => role.name === config.TEAM_ROLE_NAME);
+async function isTeamMember(member) {
+    const serverSettings = await db.getServerSettings(member.guild.id).catch(() => null);
+    const teamRoleName = serverSettings?.team_role_name || config.TEAM_ROLE_NAME;
+    const teamRoleId = serverSettings?.team_role_id || null;
+    return member.roles.cache.some(role =>
+        role.name === teamRoleName || (teamRoleId && role.id === teamRoleId)
+    ) || member.permissions.has('Administrator');
 }
 
 async function replyEphemeral(interaction, content, components = []) {
@@ -96,6 +101,15 @@ async function finishOnboarding(member, interaction, twitchName = null) {
 
 async function handleOnboardingButton(interaction) {
     const { customId, user, guild } = interaction;
+    if (!customId.startsWith('onboarding_')) return false;
+
+    // Vérifier si ce guild a l'onboarding configuré
+    const serverSettings = await db.getServerSettings(guild.id).catch(() => null);
+    const onboardingEnabled = serverSettings?.onboarding_enabled !== false
+        ? (serverSettings?.onboarding_role_etape2_id || guild.id === process.env.GUILD_ID)
+        : false;
+
+    if (!onboardingEnabled) return false;
 
     if (customId === 'onboarding_age_minor' || customId === 'onboarding_age_adult') {
         await handleAgeChoice(interaction, guild, user);
@@ -150,7 +164,7 @@ async function handleTrustValidation(interaction, guild, user) {
     const targetId = interaction.customId.replace('onboarding_trust_', '');
     const member = await fetchMember(guild, targetId);
     if (!member) { await replyEphemeral(interaction, '❌ Membre introuvable.'); return; }
-    if (!isTeamMember(interaction.member)) { await replyEphemeral(interaction, '❌ Seule la Team peut valider un membre Bibiche.'); return; }
+    if (!await isTeamMember(interaction.member)) { await replyEphemeral(interaction, '❌ Seule la Team peut valider un membre Bibiche.'); return; }
 
     await member.roles.add(config.ROLE_BIBICHE_ID).catch(console.error);
     await interaction.message.edit({

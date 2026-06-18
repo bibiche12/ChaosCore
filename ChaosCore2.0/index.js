@@ -326,7 +326,11 @@ client.on('messageReactionAdd', async (reaction, user) => {
 });
 
 async function sendAgeChoiceMessage(member) {
-    const rolesChannel = await client.channels.fetch(config.SALON_ROLES_ID).catch(() => null);
+    const guildId = member.guild.id;
+    const serverSettings = await db.getServerSettings(guildId).catch(() => null);
+    const rolesChannelId = serverSettings?.onboarding_roles_channel_id || (guildId === process.env.GUILD_ID ? config.SALON_ROLES_ID : null);
+    if (!rolesChannelId) return;
+    const rolesChannel = await client.channels.fetch(rolesChannelId).catch(() => null);
     if (!rolesChannel) return;
     await rolesChannel.send({
         content: `🦌 Bienvenue ${member} !\n\nPour continuer, choisis ton statut :\n\n🔞 **Mineur**\n✅ **Majeur**\n\nCette étape est obligatoire pour débloquer le serveur.`,
