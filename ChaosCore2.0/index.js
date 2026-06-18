@@ -265,7 +265,7 @@ client.on('guildMemberAdd', async (member) => {
         const serverSettings = await db.getServerSettings(guildId).catch(() => null);
         const arrivalRoleId = serverSettings?.onboarding_role_etape1_id || (guildId === process.env.GUILD_ID ? config.ROLE_ETAPE_1_ID : null);
         if (arrivalRoleId) {
-            await member.roles.add(arrivalRoleId).catch(() => null);
+            await member.roles.add(arrivalRoleId).catch(err => console.error(`❌ Erreur ajout rôle arrivée [${guildId}]: ${err.message}`));
             await sendOnboardingLog(guildId, `👋 **Nouveau membre arrivé**
 
 👤 Membre : ${member}
