@@ -390,6 +390,15 @@ const birthdays = require('./modules/birthdays')(pool);
 // SETTINGS MODULES (dashboard → bot)
 // ============================================================
 
+async function getServerSettings(guildId) {
+    const result = await pool.query(
+        `SELECT settings FROM guild_module_settings WHERE guild_id = $1 AND module_name = 'server'`,
+        [guildId]
+    );
+    if (result.rows.length === 0) return null;
+    return result.rows[0].settings;
+}
+
 async function getModuleSettings(guildId, moduleName) {
     const result = await pool.query(
         `SELECT settings FROM guild_module_settings WHERE guild_id = $1 AND module_name = $2`,
@@ -406,6 +415,7 @@ async function getModuleSettings(guildId, moduleName) {
 module.exports = {
     pool,
     initDatabase,
+    getServerSettings,
     getModuleSettings,
 
     ...serverSettings,
