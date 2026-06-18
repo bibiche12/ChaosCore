@@ -47,10 +47,6 @@ function getRecentJoins(guildId) {
 
 const activeTwitchChats = new Map();
 
-// ============================================================
-// LOGS
-// ============================================================
-
 async function sendOnboardingLog(guildId, message) {
     const channel = await fetchConfiguredChannel(client, guildId, 'onboarding_log_channel_id', config.ONBOARDING_LOG_CHANNEL_ID);
     if (channel) await channel.send(message).catch(console.error);
@@ -70,10 +66,6 @@ async function sendContestLog(message, guildId) {
     const channel = await fetchConfiguredChannel(client, guildId || process.env.GUILD_ID, 'contest_log_channel_id', config.CONTEST_LOG_CHANNEL_ID);
     if (channel) await channel.send(message).catch(console.error);
 }
-
-// ============================================================
-// WELCOME / GOODBYE
-// ============================================================
 
 async function sendWelcomeMessage(member) {
     const guildId = member.guild.id;
@@ -104,10 +96,6 @@ async function sendGoodbyeMessage(member) {
     await channel.send(msg).catch(() => null);
 }
 
-// ============================================================
-// MAINTENANCE — RÔLES TEMPORAIRES
-// ============================================================
-
 async function cleanExpiredRoles() {
     const expiredRoles = await db.getExpiredTemporaryRoles();
     for (const row of expiredRoles) {
@@ -122,10 +110,6 @@ async function cleanExpiredRoles() {
         } catch (error) { console.error(`❌ Erreur suppression rôle temporaire #${row.id}:`, error); }
     }
 }
-
-// ============================================================
-// MAINTENANCE — BONUS MENSUEL
-// ============================================================
 
 async function handleMonthlyBonus() {
     const now = new Date();
@@ -147,20 +131,12 @@ async function handleMonthlyBonus() {
     }
 }
 
-// ============================================================
-// COMMANDES SLASH
-// ============================================================
-
 async function registerCommands() {
     console.log('📋 Commandes à enregistrer :', commandDefinitions.map(c => c.name));
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commandDefinitions });
     console.log('✅ Commandes slash enregistrées');
 }
-
-// ============================================================
-// TWITCH
-// ============================================================
 
 function isInAutoScanWindow() {
     const formatter = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', hour12: false });
@@ -214,10 +190,6 @@ async function startTwitchForGuild(guildId) {
     startTwitchLiveEndScan(guildId, usernameToUse);
 }
 
-// ============================================================
-// CLIENT READY
-// ============================================================
-
 client.once('clientReady', async () => {
     console.log(`✅ ChaosCore connecté en tant que ${client.user.tag}`);
     await db.initDatabase();
@@ -230,10 +202,6 @@ client.once('clientReady', async () => {
     setInterval(() => { handleMonthlyBonus().catch(console.error); }, 60 * 60 * 1000);
     handleMonthlyBonus().catch(console.error);
 });
-
-// ============================================================
-// INTERACTIONS
-// ============================================================
 
 client.on('interactionCreate', async (interaction) => {
     try {
@@ -253,10 +221,6 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// ============================================================
-// MESSAGES
-// ============================================================
-
 client.on('messageCreate', (message) => { handleMessage(message, client, sendLog, pendingEmojiRequests).catch(console.error); });
 
 client.on('messageDelete', async (message) => {
@@ -274,10 +238,6 @@ client.on('messageUpdate', async (oldMessage, newMessage) => {
     } catch (error) { console.error('❌ Erreur log messageUpdate:', error); }
 });
 
-// ============================================================
-// ANTI-RAID
-// ============================================================
-
 async function triggerRaidAlert(guildId, members) {
     if (security.isRaidMode(guildId)) return;
     security.enableRaidMode(guildId);
@@ -286,10 +246,6 @@ async function triggerRaidAlert(guildId, members) {
     await channel.send(`🚨 **RAID POTENTIEL DÉTECTÉ**\n\n👥 Arrivées : **${members.length} membres**\n⏱️ Fenêtre : **2 minutes**\n\n🛡️ Mode Raid activé automatiquement.\n\n${members.map(m => `• ${m.user.tag}`).join('\n')}`).catch(() => null);
     console.log(`🚨 [${guildId}] MODE RAID ACTIVÉ`);
 }
-
-// ============================================================
-// ONBOARDING + WELCOME
-// ============================================================
 
 client.on('guildMemberAdd', async (member) => {
     try {
@@ -345,7 +301,7 @@ client.on('guildMemberRemove', async (member) => {
 });
 
 // ============================================================
-// SERVEUR WEB — OVERLAY + API INTERNE
+// SERVEUR WEB
 // ============================================================
 
 const app = express();
@@ -484,24 +440,22 @@ app.post('/api/shop/setup/:guildId', requireApiKey, async (req, res) => {
     }
 });
 
-app.post('/api/autoroles/setup/:guildId', requireApiKey, requireInGuild, async (req, res) => {
+app.post('/api/autoroles/setup/:guildId', requireApiKey, async (req, res) => {
     const { guildId } = req.params;
     try {
-        const guild = req.guild;
+        const guild = await client.guilds.fetch(guildId).catch(() => null);
+        if (!guild) return res.status(404).json({ ok: false, error: 'Serveur introuvable' });
 
-        // Lire le salon depuis la DB
         const { getRolesChannelId, getAutorolePanels } = require('./src/utils/guildSettings');
         const rolesChannelId = await getRolesChannelId(guildId);
         const roleChannel = await client.channels.fetch(rolesChannelId).catch(() => null);
         if (!roleChannel) return res.status(404).json({ ok: false, error: `Salon rôles introuvable (ID: ${rolesChannelId}). Configure-le dans le dashboard.` });
 
-        // Lire les panneaux depuis la DB
         const panels = await getAutorolePanels(guildId);
         if (!panels || panels.length === 0) {
             return res.status(400).json({ ok: false, error: 'Aucun panneau actif configuré pour ce serveur.' });
         }
 
-        // Envoyer chaque panneau
         for (const panel of panels) {
             if (!panel.roles || panel.roles.length === 0) continue;
 
@@ -529,7 +483,6 @@ app.post('/api/autoroles/setup/:guildId', requireApiKey, requireInGuild, async (
         res.status(500).json({ ok: false, error: err.message });
     }
 });
-// Ajouter dans index.js du bot, avant le app.listen :
 
 app.post('/api/embed/send/:guildId', requireApiKey, async (req, res) => {
     const { guildId } = req.params;
@@ -538,17 +491,12 @@ app.post('/api/embed/send/:guildId', requireApiKey, async (req, res) => {
     try {
         const channel = await client.channels.fetch(channelId).catch(() => null);
         if (!channel) return res.status(404).json({ ok: false, error: 'Salon introuvable' });
-
-        const { EmbedBuilder } = require('discord.js');
-        const discordEmbed = new EmbedBuilder()
-            .setColor(embed.color || '#9146ff');
-
+        const discordEmbed = new EmbedBuilder().setColor(embed.color || '#9146ff');
         if (embed.title)       discordEmbed.setTitle(embed.title);
         if (embed.description) discordEmbed.setDescription(embed.description);
         if (embed.image_url)   discordEmbed.setImage(embed.image_url);
         if (embed.author_name) discordEmbed.setAuthor({ name: embed.author_name, iconURL: embed.author_icon || undefined });
         if (embed.footer_text) discordEmbed.setFooter({ text: embed.footer_text });
-
         await channel.send({ embeds: [discordEmbed] });
         console.log(`📝 [${guildId}] Embed envoyé dans ${channelId}`);
         res.json({ ok: true, message: 'Embed envoyé' });
@@ -556,7 +504,6 @@ app.post('/api/embed/send/:guildId', requireApiKey, async (req, res) => {
         res.status(500).json({ ok: false, error: err.message });
     }
 });
-// Ajouter dans index.js du bot avant app.listen :
 
 app.post('/api/gaming-news/send/:guildId', requireApiKey, async (req, res) => {
     const { guildId } = req.params;
@@ -565,17 +512,14 @@ app.post('/api/gaming-news/send/:guildId', requireApiKey, async (req, res) => {
     try {
         const channel = await client.channels.fetch(channelId).catch(() => null);
         if (!channel) return res.status(404).json({ ok: false, error: 'Salon introuvable' });
-
         const embed = new EmbedBuilder()
             .setColor('#9146ff')
             .setTitle(`${article.sourceEmoji || '📰'} ${article.title}`)
             .setURL(article.url)
             .setFooter({ text: `${article.source} • ChaosCore Actu Gaming` })
             .setTimestamp(article.published_at ? new Date(article.published_at) : new Date());
-
         if (article.summary) embed.setDescription(article.summary.substring(0, 400) + (article.summary.length > 400 ? '...' : ''));
         if (article.image_url) embed.setImage(article.image_url);
-
         await channel.send({ embeds: [embed] });
         console.log(`📰 [${guildId}] Article envoyé : ${article.title}`);
         res.json({ ok: true });
@@ -583,8 +527,6 @@ app.post('/api/gaming-news/send/:guildId', requireApiKey, async (req, res) => {
         res.status(500).json({ ok: false, error: err.message });
     }
 });
-
-
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => { console.log(`🌐 Overlay Web démarré sur le port ${PORT}`); });
