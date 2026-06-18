@@ -186,8 +186,12 @@ async function handleSetupRolesCommand(interaction, discordClient) {
     if (!await requireTeam(interaction)) return;
     await interaction.deferReply({ flags: 64 });
 
-    const roleChannel = await discordClient.channels.fetch(config.SALON_ROLES_ID).catch(() => null);
-    if (!roleChannel) { await interaction.editReply('❌ Salon rôles introuvable.'); return; }
+    const guildId = interaction.guild.id;
+    const autoroleSettings = await db.getModuleSettings(guildId, 'autoroles').catch(() => null);
+    const rolesChannelId = autoroleSettings?.main_channel_id || config.SALON_ROLES_ID;
+
+    const roleChannel = await discordClient.channels.fetch(rolesChannelId).catch(() => null);
+    if (!roleChannel) { await interaction.editReply('❌ Salon rôles introuvable. Configure-le dans le dashboard → Autorôles → Salons.'); return; }
 
     await roleChannel.send({
         embeds: [new EmbedBuilder().setColor(0x2f3136).setTitle('🔔 PINGS').setDescription(`Choisis les notifications que tu souhaites recevoir.\n\n📹 Ping - Live\n🎮 Ping - Game\n📰 Ping - Programme`)],
