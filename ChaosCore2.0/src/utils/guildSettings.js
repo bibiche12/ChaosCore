@@ -141,6 +141,63 @@ async function getAllowedMoneyChannels(guildId) {
     return config.ALLOWED_MONEY_CHANNELS;
 }
 
+// ============================================================
+// PERMISSIONS — helpers centralisés
+// Remplace les implémentations locales dupliquées (hasTeamRole, etc.)
+// présentes historiquement dans chaque fichier de commande/bouton.
+// ============================================================
+
+// Vérifie si un membre a le rôle "Team" — par ID en priorité, sinon par nom configuré,
+// avec fallback sur le nom Black&Co' uniquement si aucune config DB n'existe.
+async function hasTeamRole(member) {
+    if (!member?.guild) return false;
+    const guildId = member.guild.id;
+    const s = await getSettings(guildId);
+    const teamRoleId = s.server?.team_role_id || null;
+    const teamRoleName = s.server?.team_role_name || config.TEAM_ROLE_NAME;
+
+    if (teamRoleId && member.roles.cache.has(teamRoleId)) return true;
+    return member.roles.cache.some(role => role.name === teamRoleName);
+}
+
+// Vérifie si un membre a le pouvoir de modération (rôle modérateur, sécurité, ou team)
+async function hasModeratorPower(member) {
+    if (!member?.guild) return false;
+    const guildId = member.guild.id;
+    const s = await getSettings(guildId);
+
+    const moderatorRoleId = s.security?.moderator_role_id
+        || s.server?.moderator_role_id
+        || config.MODERATOR_ROLE_ID;
+
+    if (moderatorRoleId && member.roles.cache.has(moderatorRoleId)) return true;
+    return await hasTeamRole(member);
+}
+
+// Helper de garde pour les commandes/boutons — répond et retourne false si refusé
+async function requireTeam(interaction) {
+    if (interaction.member.permissions?.has?.('Administrator')) return true;
+    const isTeam = await hasTeamRole(interaction.member);
+    if (!isTeam && !interaction.member.permissions.has('Administrator')) {
+        const reply = { content: "❌ Tu n'as pas l'autorisation d'utiliser cette commande.", flags: 64 };
+        if (interaction.deferred || interaction.replied) await interaction.editReply(reply).catch(() => null);
+        else await interaction.reply(reply).catch(() => null);
+        return false;
+    }
+    return true;
+}
+
+async function requireModerator(interaction) {
+    const isMod = await hasModeratorPower(interaction.member);
+    if (!isMod && !interaction.member.permissions.has('Administrator')) {
+        const reply = { content: "❌ Tu n'as pas l'autorisation d'utiliser cette commande.", flags: 64 };
+        if (interaction.deferred || interaction.replied) await interaction.editReply(reply).catch(() => null);
+        else await interaction.reply(reply).catch(() => null);
+        return false;
+    }
+    return true;
+}
+
 // Récupère les panneaux autorôles depuis la DB pour un guild
 async function getAutorolePanels(guildId) {
     const { pool } = require('../db/queries');
@@ -166,6 +223,10 @@ async function getAutorolePanels(guildId) {
 module.exports = {
     getSettings,
     invalidateCache,
+    hasTeamRole,
+    hasModeratorPower,
+    requireTeam,
+    requireModerator,
     getRolesChannelId,
     getLogChannelId,
     getWelcomeChannelId,

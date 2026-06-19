@@ -1,11 +1,6 @@
 const config = require('../../config');
 const db = require('../../db/queries');
-
-function hasTeamRole(member) {
-    return member.roles.cache.some(
-        role => role.name === config.TEAM_ROLE_NAME
-    );
-}
+const { hasTeamRole } = require('../../utils/guildSettings');
 
 function isValidDate(day, month) {
     const date = new Date(2024, month - 1, day);
@@ -46,7 +41,7 @@ async function handleBirthdayCommand(interaction) {
     }
 
     if (interaction.commandName === 'setupanniversaire') {
-        if (!hasTeamRole(interaction.member)) {
+        if (!await hasTeamRole(interaction.member)) {
             await interaction.reply({
                 content: "❌ Tu n'as pas l'autorisation d'utiliser cette commande.",
                 flags: 64,

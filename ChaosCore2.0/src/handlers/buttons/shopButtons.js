@@ -10,6 +10,16 @@ const {
 
 const config = require('../../config');
 const db = require('../../db/queries');
+const { resolveShopPrices } = require('../../services/shop');
+
+async function getShopContext(guildId) {
+    const shopSettings = await db.getModuleSettings(guildId, 'shop').catch(() => null);
+    const economySettings = await db.getModuleSettings(guildId, 'economy').catch(() => null);
+    return {
+        moneyName: economySettings?.currency_singular || config.MONEY_NAME,
+        prices: resolveShopPrices(shopSettings),
+    };
+}
 
 const pendingRolePurchases = new Map();
 const pendingPhraseRequests = new Map();
@@ -105,6 +115,7 @@ async function handleConfirmRolePurchase(interaction, discordClient) {
 
     const validationChannel = await getValidationChannel(discordClient, guildId);
     if (validationChannel) {
+        const { moneyName } = await getShopContext(guildId);
         await validationChannel.send({
             content:
                 `👑 **Nouvelle demande de rôle personnalisé**\n\n` +
@@ -112,7 +123,7 @@ async function handleConfirmRolePurchase(interaction, discordClient) {
                 `🏷️ Nom : **${purchase.roleName}**\n` +
                 `🎨 Couleur : **${config.ROLE_COLOR_NAMES[purchase.color] || purchase.color}**\n` +
                 `⏳ Durée : **${purchase.duration} jours**\n` +
-                `💰 Prix : **${purchase.price} ${config.MONEY_NAME}s**`,
+                `💰 Prix : **${purchase.price} ${moneyName}s**`,
             components: [buildApproveRejectButtons(requestId)],
         });
     }
@@ -137,15 +148,16 @@ async function handleBuyGageButton(interaction) {
 async function handleBuyPhraseButton(interaction) {
     await interaction.deferReply({ flags: 64 });
 
-    const price1 = config.SHOP_PRICES.phrase[1];
-    const price2 = config.SHOP_PRICES.phrase[2];
+    const { moneyName, prices } = await getShopContext(interaction.guildId);
+    const price1 = prices.phrase[1];
+    const price2 = prices.phrase[2];
 
     const durationMenu = new StringSelectMenuBuilder()
         .setCustomId('phrase_duration')
         .setPlaceholder('Choisis la durée')
         .addOptions(
-            { label: '1 live', description: `${price1} ${config.MONEY_NAME}s`, value: `1_${price1}` },
-            { label: '2 lives', description: `${price2} ${config.MONEY_NAME}s`, value: `2_${price2}` }
+            { label: '1 live', description: `${price1} ${moneyName}s`, value: `1_${price1}` },
+            { label: '2 lives', description: `${price2} ${moneyName}s`, value: `2_${price2}` }
         );
 
     await interaction.editReply({
@@ -163,10 +175,12 @@ async function handleApproveShopRequest(interaction, discordClient, sendLog) {
     if (!request) { await interaction.editReply({ content: '❌ Demande introuvable.' }); return; }
     if (request.status !== 'pending') { await interaction.editReply({ content: '❌ Cette demande a déjà été traitée.' }); return; }
 
+    const { moneyName } = await getShopContext(guildId);
+
     const userData = await db.getUserPoints(guildId, request.user_id);
     if (userData.balance < request.price) {
         await db.updateShopRequestStatus(requestId, 'rejected');
-        await interaction.editReply({ content: `❌ Solde insuffisant.\n\n👤 <@${request.user_id}>\n💰 Prix : **${request.price} ${config.MONEY_NAME}s**` });
+        await interaction.editReply({ content: `❌ Solde insuffisant.\n\n👤 <@${request.user_id}>\n💰 Prix : **${request.price} ${moneyName}s**` });
         return;
     }
 
@@ -210,8 +224,8 @@ async function handleApproveShopRequest(interaction, discordClient, sendLog) {
         `✅ **Demande boutique acceptée**\n\n` +
         `👤 Membre : <@${request.user_id}>\n` +
         `📌 Type : **${request.type}**\n` +
-        `💰 Débité : **${request.price} ${config.MONEY_NAME}s**\n` +
-        `💳 Nouveau solde : **${newBalance} ${config.MONEY_NAME}s**\n` +
+        `💰 Débité : **${request.price} ${moneyName}s**\n` +
+        `💳 Nouveau solde : **${newBalance} ${moneyName}s**\n` +
         `👑 Validé par : ${user}`
     ).catch(() => null);
 
@@ -259,14 +273,17 @@ async function handleRoleNameModal(interaction) {
     const roleName = interaction.fields.getTextInputValue('role_name').trim();
     pendingRolePurchases.set(interaction.user.id, { roleName, duration: null, color: null, price: null });
     await interaction.deferReply({ flags: 64 });
+
+    const { moneyName, prices } = await getShopContext(interaction.guildId);
+
     await interaction.editReply({
         content: `👑 Nom du rôle choisi : **${roleName}**\n\nChoisis maintenant la durée et la couleur.`,
         components: [
             new ActionRowBuilder().addComponents(
                 new StringSelectMenuBuilder().setCustomId('role_duration').setPlaceholder('Choisis la durée').addOptions(
-                    { label: '1 semaine', description: '50 ' + config.MONEY_NAME + 's', value: '7_50' },
-                    { label: '2 semaines', description: '75 ' + config.MONEY_NAME + 's', value: '14_75' },
-                    { label: '1 mois', description: '150 ' + config.MONEY_NAME + 's', value: '30_150' }
+                    { label: '1 semaine', description: `${prices.role[7]} ${moneyName}s`, value: `7_${prices.role[7]}` },
+                    { label: '2 semaines', description: `${prices.role[14]} ${moneyName}s`, value: `14_${prices.role[14]}` },
+                    { label: '1 mois', description: `${prices.role[30]} ${moneyName}s`, value: `30_${prices.role[30]}` }
                 )
             ),
             new ActionRowBuilder().addComponents(
@@ -282,11 +299,12 @@ async function handleGageModal(interaction, discordClient) {
     await interaction.deferReply({ flags: 64 });
     const { user, guildId } = interaction;
     const gageText = sanitizeMentions(interaction.fields.getTextInputValue('gage_text'));
-    const requestId = await db.insertShopRequest(guildId, user.id, 'gage', gageText, config.SHOP_PRICES.gage);
+    const { moneyName, prices } = await getShopContext(guildId);
+    const requestId = await db.insertShopRequest(guildId, user.id, 'gage', gageText, prices.gage);
     const validationChannel = await getValidationChannel(discordClient, guildId);
     if (validationChannel) {
         await validationChannel.send({
-            content: `😈 **Nouvelle demande de gage**\n\n👤 Membre : ${user}\n💰 Prix : **${config.SHOP_PRICES.gage} ${config.MONEY_NAME}s**\n\n📌 Gage demandé :\n${gageText}`,
+            content: `😈 **Nouvelle demande de gage**\n\n👤 Membre : ${user}\n💰 Prix : **${prices.gage} ${moneyName}s**\n\n📌 Gage demandé :\n${gageText}`,
             components: [buildApproveRejectButtons(requestId)],
         });
     }
@@ -303,8 +321,9 @@ async function handlePhraseModal(interaction, discordClient) {
     pendingPhraseRequests.delete(user.id);
     const validationChannel = await getValidationChannel(discordClient, guildId);
     if (validationChannel) {
+        const { moneyName } = await getShopContext(guildId);
         await validationChannel.send({
-            content: `📢 **Nouvelle demande de phrase épinglée**\n\n👤 Membre : ${user}\n💰 Prix : **${phraseData.price} ${config.MONEY_NAME}s**\n📺 Durée : **${phraseData.lives} live(s)**\n\n📌 Phrase demandée :\n${phraseText}`,
+            content: `📢 **Nouvelle demande de phrase épinglée**\n\n👤 Membre : ${user}\n💰 Prix : **${phraseData.price} ${moneyName}s**\n📺 Durée : **${phraseData.lives} live(s)**\n\n📌 Phrase demandée :\n${phraseText}`,
             components: [buildApproveRejectButtons(requestId)],
         });
     }
@@ -357,13 +376,14 @@ async function handleRoleColorSelect(interaction) {
 
 async function sendRolePurchaseSummary(interaction, purchase) {
     if (!purchase || !purchase.duration || !purchase.color || !purchase.price) return;
+    const { moneyName } = await getShopContext(interaction.guildId);
     await interaction.editReply({
         content:
             `👑 **Récapitulatif de l'achat**\n\n` +
             `🏷️ Nom : **${purchase.roleName}**\n` +
             `🎨 Couleur : **${config.ROLE_COLOR_NAMES[purchase.color] || purchase.color}**\n` +
             `⏳ Durée : **${purchase.duration} jours**\n` +
-            `💰 Prix : **${purchase.price} ${config.MONEY_NAME}s**`,
+            `💰 Prix : **${purchase.price} ${moneyName}s**`,
         components: [buildConfirmRoleButtons(interaction.user.id)],
     });
 }

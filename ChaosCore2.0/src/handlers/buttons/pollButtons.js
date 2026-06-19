@@ -14,19 +14,7 @@ const db = require('../../db/queries');
 
 const { buildPollEmbed } = require('../../services/polls/pollResults');
 const { closePollAndPublishResults } = require('../../services/polls/pollService');
-
-// ============================================================
-// HELPERS
-// ============================================================
-
-function hasModeratorPermission(member) {
-    const isModerator = member.roles.cache.has(config.MODERATOR_ROLE_ID);
-    const isTeam = member.roles.cache.some(
-        role => role.name === config.TEAM_ROLE_NAME
-    );
-
-    return isModerator || isTeam;
-}
+const { hasModeratorPower } = require('../../utils/guildSettings');
 
 async function replyEphemeral(interaction, content) {
     await interaction.reply({
@@ -88,7 +76,7 @@ async function handlePollButton(interaction) {
 async function handlePollClose(interaction) {
     await interaction.deferReply({ flags: 64 });
 
-    if (!hasModeratorPermission(interaction.member)) {
+    if (!await hasModeratorPower(interaction.member)) {
         await editEphemeral(
             interaction,
             '❌ Seule la modération peut clôturer un sondage.'

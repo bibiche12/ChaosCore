@@ -510,19 +510,35 @@ async function sendLiveAnnouncement(discordClient, guildId, stream, twitchUserna
     const liveChannelId = twitchSettings?.live_channel_id || settings?.live_channel_id || config.LIVE_CHANNEL_ID;
     const liveRoleId = settings?.live_role_id || config.LIVE_ROLE_ID;
     const username = twitchSettings?.twitch_username || settings?.twitch_username || twitchUsername || config.TWITCH_USERNAME;
+    const serverName = settings?.server_name || 'Le serveur';
 
     const channel = await discordClient.channels.fetch(liveChannelId).catch(() => null);
     if (!channel) return;
 
-    await channel.send({
-        content:
-            `🔴 **BLACK&CO' EST EN LIVE** 🔴\n\n` +
-            `<@&${liveRoleId}>\n\n` +
-            `Le chaos commence maintenant 😈\n\n` +
+    // Message personnalisable depuis le dashboard, avec fallback générique
+    // (plus de texte Black&Co' codé en dur — chaque serveur peut le personnaliser)
+    const customMessage = twitchSettings?.live_announce_message;
+
+    let content;
+    if (customMessage) {
+        content = customMessage
+            .replace('{role}', `<@&${liveRoleId}>`)
+            .replace('{game}', stream.game_name || 'Non renseigné')
+            .replace('{title}', stream.title || 'Live en cours')
+            .replace('{username}', username)
+            .replace('{url}', `https://www.twitch.tv/${username}`)
+            .replace('{server}', serverName);
+    } else {
+        content =
+            `🔴 **${serverName} EST EN LIVE** 🔴\n\n` +
+            (liveRoleId ? `<@&${liveRoleId}>\n\n` : '') +
             `🎮 Jeu : ${stream.game_name || 'Non renseigné'}\n` +
             `📢 Titre : ${stream.title || 'Live en cours'}\n` +
-            `📺 https://www.twitch.tv/${username}\n\n` +
-            `La bibiche a sonné l'alarme 🦌🔥`,
+            `📺 https://www.twitch.tv/${username}`;
+    }
+
+    await channel.send({
+        content,
         allowedMentions: { parse: ['roles'] },
     }).catch(console.error);
 }

@@ -9,21 +9,15 @@ const {
 
 const config = require('../../config');
 const db = require('../../db/queries');
+const { hasTeamRole, hasModeratorPower } = require('../../utils/guildSettings');
 
 function cleanChannelName(name) {
     return name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').slice(0, 30);
 }
 
-function hasTeamRole(member) {
-    return member.roles.cache.some(role => role.name === config.TEAM_ROLE_NAME);
-}
-
-function hasStaffPower(member) {
-    return (
-        member.permissions.has(PermissionFlagsBits.Administrator) ||
-        member.roles.cache.has(config.MODERATOR_ROLE_ID) ||
-        hasTeamRole(member)
-    );
+async function hasStaffPower(member) {
+    if (member.permissions.has(PermissionFlagsBits.Administrator)) return true;
+    return await hasModeratorPower(member);
 }
 
 async function handleSupportTicketButton(interaction) {
@@ -121,7 +115,7 @@ async function closeSupportTicket(interaction) {
     if (!ticket) { await interaction.editReply({ content: "❌ Ce salon n'est pas un ticket ouvert." }); return; }
 
     const isOwner = ticket.user_id === interaction.user.id;
-    const isStaff = hasStaffPower(interaction.member);
+    const isStaff = await hasStaffPower(interaction.member);
 
     // Vérifier si l'utilisateur peut fermer
     const supportSettings = await db.getModuleSettings(interaction.guild.id, 'support').catch(() => null);

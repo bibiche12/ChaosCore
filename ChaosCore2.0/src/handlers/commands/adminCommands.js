@@ -7,46 +7,7 @@ const {
 
 const config = require('../../config');
 const db = require('../../db/queries');
-
-async function hasTeamRole(member) {
-    const guildId = member.guild.id;
-    const serverSettings = await db.getServerSettings(guildId).catch(() => null);
-    const teamRoleName = serverSettings?.team_role_name || config.TEAM_ROLE_NAME;
-    const teamRoleId = serverSettings?.team_role_id || null;
-    return member.roles.cache.some(role =>
-        role.name === teamRoleName || (teamRoleId && role.id === teamRoleId)
-    );
-}
-
-async function hasModeratorPower(member) {
-    const guildId = member.guild.id;
-    const securitySettings = await db.getModuleSettings(guildId, 'security').catch(() => null);
-    const serverSettings = await db.getServerSettings(guildId).catch(() => null);
-    const moderatorRoleId = securitySettings?.moderator_role_id
-        || serverSettings?.moderator_role_id
-        || config.MODERATOR_ROLE_ID;
-    return member.roles.cache.has(moderatorRoleId) || await hasTeamRole(member);
-}
-
-async function requireTeam(interaction) {
-    // Bypass pour les administrateurs Discord
-    if (interaction.member.permissions.has('Administrator')) return true;
-    if (!await hasTeamRole(interaction.member)) {
-        await interaction.reply({ content: "❌ Tu n'as pas l'autorisation d'utiliser cette commande.", flags: 64 });
-        return false;
-    }
-    return true;
-}
-
-async function requireModerator(interaction) {
-    // Bypass pour les administrateurs Discord
-    if (interaction.member.permissions.has('Administrator')) return true;
-    if (!await hasModeratorPower(interaction.member)) {
-        await interaction.reply({ content: "❌ Tu n'as pas l'autorisation d'utiliser cette commande.", flags: 64 });
-        return false;
-    }
-    return true;
-}
+const { requireTeam, requireModerator } = require('../../utils/guildSettings');
 
 async function handleAdminCommand(interaction, { discordClient, sendContestLog }) {
     if (interaction.commandName === 'ping') { await handlePingCommand(interaction); return true; }

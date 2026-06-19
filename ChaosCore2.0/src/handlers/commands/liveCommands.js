@@ -4,29 +4,8 @@
 
 const config = require('../../config');
 const security = require('../../services/security');
-
-// ============================================================
-// PERMISSIONS
-// ============================================================
-
-function hasTeamRole(member) {
-    return member.roles.cache.some(
-        role => role.name === config.TEAM_ROLE_NAME
-    );
-}
-
-function requireTeam(interaction) {
-    if (!hasTeamRole(interaction.member)) {
-        interaction.reply({
-            content: "❌ Tu n'as pas l'autorisation d'utiliser cette commande.",
-            flags: 64,
-        });
-
-        return false;
-    }
-
-    return true;
-}
+const db = require('../../db/queries');
+const { requireTeam } = require('../../utils/guildSettings');
 
 // ============================================================
 // HANDLER PRINCIPAL
@@ -82,14 +61,17 @@ async function handleLiveCommand(
 // ============================================================
 
 async function handleRaidOffCommand(interaction, discordClient) {
-    if (!requireTeam(interaction)) {
+    if (!await requireTeam(interaction)) {
         return;
     }
 
     security.disableRaidMode(interaction.guildId);
 
+    const securitySettings = await db.getModuleSettings(interaction.guildId, 'security').catch(() => null);
+    const securityChannelId = securitySettings?.logs_channel_id || config.SECURITY_LOG_CHANNEL_ID;
+
     const securityChannel = await discordClient.channels
-        .fetch(config.SECURITY_LOG_CHANNEL_ID)
+        .fetch(securityChannelId)
         .catch(() => null);
 
     if (securityChannel) {
@@ -115,7 +97,7 @@ async function handleScanCommand(
     discordClient,
     processLivePhrases
 ) {
-    if (!requireTeam(interaction)) {
+    if (!await requireTeam(interaction)) {
         return;
     }
 
@@ -166,7 +148,7 @@ async function handleLiveStartCommand(
     twitchService,
     sendContestLog
 ) {
-    if (!requireTeam(interaction)) {
+    if (!await requireTeam(interaction)) {
         return;
     }
 
@@ -188,10 +170,14 @@ async function handleLiveStartCommand(
         '🔴 Comptage Tickets du Chaos activé pour le live.'
     );
 
+    const ticketSettings = await db.getModuleSettings(interaction.guildId, 'tickets').catch(() => null);
+    const ticketPresence = ticketSettings?.ticket_presence || config.TICKET_PRESENCE;
+    const ticketPer10Msg = ticketSettings?.ticket_every_10_messages || config.TICKET_EVERY_10_MESSAGES;
+
     await sendContestLog(
         `🔴 **Live concours démarré**\n\n` +
-        `Présence : **+${config.TICKET_PRESENCE} Tickets**\n` +
-        `Messages : **+${config.TICKET_EVERY_10_MESSAGES} Tickets tous les 10 messages non-spam**`
+        `Présence : **+${ticketPresence} Tickets**\n` +
+        `Messages : **+${ticketPer10Msg} Tickets tous les 10 messages non-spam**`
     ).catch(() => null);
 }
 
@@ -204,7 +190,7 @@ async function handleLiveStopCommand(
     twitchService,
     sendContestLog
 ) {
-    if (!requireTeam(interaction)) {
+    if (!await requireTeam(interaction)) {
         return;
     }
 

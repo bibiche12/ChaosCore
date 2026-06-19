@@ -201,6 +201,7 @@ client.once('clientReady', async () => {
     cleanExpiredRoles();
     setInterval(() => { handleMonthlyBonus().catch(console.error); }, 60 * 60 * 1000);
     handleMonthlyBonus().catch(console.error);
+    startBirthdayJob(client);
 });
 
 client.on('interactionCreate', async (interaction) => {

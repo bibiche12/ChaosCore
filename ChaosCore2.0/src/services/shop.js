@@ -28,10 +28,32 @@ async function getShopSettings(guildId) {
     return { moduleSettings, serverSettings };
 }
 
-async function setupShop(shopChannel, guildId) {
-    const { moduleSettings } = await getShopSettings(guildId);
+// Fusionne les prix configurés en DB (dashboard) avec les valeurs par défaut.
+// Auparavant config.SHOP_PRICES était utilisé tel quel partout, donc toute
+// modification de prix dans le dashboard n'avait aucun effet sur le bot.
+function resolveShopPrices(moduleSettings) {
+    const dbPrices = moduleSettings?.shop_prices || {};
+    return {
+        emoji: dbPrices.emoji ?? config.SHOP_PRICES.emoji,
+        gage: dbPrices.gage ?? config.SHOP_PRICES.gage,
+        phrase: {
+            1: dbPrices.phrase?.[1] ?? config.SHOP_PRICES.phrase[1],
+            2: dbPrices.phrase?.[2] ?? config.SHOP_PRICES.phrase[2],
+        },
+        role: {
+            7: dbPrices.role?.[7] ?? config.SHOP_PRICES.role[7],
+            14: dbPrices.role?.[14] ?? config.SHOP_PRICES.role[14],
+            30: dbPrices.role?.[30] ?? config.SHOP_PRICES.role[30],
+        },
+    };
+}
 
-    const moneyName = config.MONEY_NAME;
+async function setupShop(shopChannel, guildId) {
+    const { moduleSettings, serverSettings } = await getShopSettings(guildId);
+
+    const economySettings = await db.getModuleSettings(guildId, 'economy').catch(() => null);
+    const moneyName = economySettings?.currency_singular || config.MONEY_NAME;
+    const prices = resolveShopPrices(moduleSettings);
 
     await shopChannel.send({
         content:
@@ -43,7 +65,7 @@ async function setupShop(shopChannel, guildId) {
     await shopChannel.send({
         content:
             `🎨 **Emoji personnalisé**\n\n` +
-            `💰 Prix : **${config.SHOP_PRICES.emoji} ${moneyName}s**\n` +
+            `💰 Prix : **${prices.emoji} ${moneyName}s**\n` +
             `📌 Validation : manuelle\n` +
             `📎 Image à fournir après la demande`,
         components: [buildBuyButton('shop_buy_emoji', 'Acheter', '🛒')],
@@ -52,9 +74,9 @@ async function setupShop(shopChannel, guildId) {
     await shopChannel.send({
         content:
             `👑 **Rôle temporaire personnalisé**\n\n` +
-            `💰 1 semaine : **${config.SHOP_PRICES.role[7]} ${moneyName}s**\n` +
-            `💰 2 semaines : **${config.SHOP_PRICES.role[14]} ${moneyName}s**\n` +
-            `💰 1 mois : **${config.SHOP_PRICES.role[30]} ${moneyName}s**\n\n` +
+            `💰 1 semaine : **${prices.role[7]} ${moneyName}s**\n` +
+            `💰 2 semaines : **${prices.role[14]} ${moneyName}s**\n` +
+            `💰 1 mois : **${prices.role[30]} ${moneyName}s**\n\n` +
             `🎨 Couleurs disponibles : Rouge, Orange, Jaune, Vert, Bleu, Violet, Rose, Noir, Blanc, Marron`,
         components: [buildBuyButton('shop_buy_role', 'Acheter', '🛒')],
     });
@@ -62,7 +84,7 @@ async function setupShop(shopChannel, guildId) {
     await shopChannel.send({
         content:
             `😈 **Gage imposé**\n\n` +
-            `💰 Prix : **${config.SHOP_PRICES.gage} ${moneyName}s**\n` +
+            `💰 Prix : **${prices.gage} ${moneyName}s**\n` +
             `📌 Validation : manuelle`,
         components: [buildBuyButton('shop_buy_gage', 'Acheter', '🛒')],
     });
@@ -70,8 +92,8 @@ async function setupShop(shopChannel, guildId) {
     await shopChannel.send({
         content:
             `📢 **Phrase épinglée sur le live**\n\n` +
-            `💰 1 live : **${config.SHOP_PRICES.phrase[1]} ${moneyName}s**\n` +
-            `💰 2 lives : **${config.SHOP_PRICES.phrase[2]} ${moneyName}s**\n` +
+            `💰 1 live : **${prices.phrase[1]} ${moneyName}s**\n` +
+            `💰 2 lives : **${prices.phrase[2]} ${moneyName}s**\n` +
             `📌 Validation : manuelle`,
         components: [buildBuyButton('shop_buy_phrase', 'Acheter', '🛒')],
     });
@@ -107,4 +129,4 @@ async function processLivePhrases(discordClient, guildId) {
     }
 }
 
-module.exports = { setupShop, processLivePhrases };
+module.exports = { setupShop, processLivePhrases, resolveShopPrices };

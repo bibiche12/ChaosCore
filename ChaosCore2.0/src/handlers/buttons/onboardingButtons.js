@@ -9,6 +9,7 @@ const {
 
 const config = require('../../config');
 const db = require('../../db/queries');
+const { hasTeamRole } = require('../../utils/guildSettings');
 
 function buildOnboardingTwitchButtons() {
     return new ActionRowBuilder().addComponents(
@@ -18,12 +19,8 @@ function buildOnboardingTwitchButtons() {
 }
 
 async function isTeamMember(member) {
-    const serverSettings = await db.getServerSettings(member.guild.id).catch(() => null);
-    const teamRoleName = serverSettings?.team_role_name || config.TEAM_ROLE_NAME;
-    const teamRoleId = serverSettings?.team_role_id || null;
-    return member.roles.cache.some(role =>
-        role.name === teamRoleName || (teamRoleId && role.id === teamRoleId)
-    ) || member.permissions.has('Administrator');
+    if (member.permissions.has('Administrator')) return true;
+    return await hasTeamRole(member);
 }
 
 async function replyEphemeral(interaction, content, components = []) {

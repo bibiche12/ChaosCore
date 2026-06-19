@@ -1,17 +1,6 @@
 const config = require('../../config');
 const db = require('../../db/queries');
-
-function hasTeamRole(member) {
-    return member.roles.cache.some(role => role.name === config.TEAM_ROLE_NAME);
-}
-
-function requireTeam(interaction) {
-    if (!hasTeamRole(interaction.member)) {
-        interaction.reply({ content: "❌ Tu n'as pas l'autorisation d'utiliser cette commande.", flags: 64 });
-        return false;
-    }
-    return true;
-}
+const { requireTeam } = require('../../utils/guildSettings');
 
 async function handleShopCommand(interaction, { discordClient, setupShop }) {
     if (interaction.commandName === 'setupboutique') {
@@ -22,7 +11,7 @@ async function handleShopCommand(interaction, { discordClient, setupShop }) {
 }
 
 async function handleSetupShopCommand(interaction, discordClient, setupShop) {
-    if (!requireTeam(interaction)) return;
+    if (!await requireTeam(interaction)) return;
 
     await interaction.deferReply({ flags: 64 });
 

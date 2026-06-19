@@ -41,9 +41,9 @@ async function checkBirthdays(client) {
 
         const setting = await db.getBirthdayChannel(birthday.guild_id);
 
-        const channelId =
-            setting?.channel_id ||
-            config.BIRTHDAY_CHANNEL_ID;
+        // config.BIRTHDAY_CHANNEL_ID n'existe pas dans config.js — pas de fallback
+        // possible ici, le salon doit être configuré par serveur dans le dashboard.
+        const channelId = setting?.channel_id;
 
         if (!channelId) {
             continue;
@@ -59,7 +59,7 @@ async function checkBirthdays(client) {
 
         await channel.send(
             `🎂 Aujourd'hui c'est l'anniversaire de <@${birthday.user_id}> !\n\n` +
-            `Les Bibiches te souhaitent une magnifique journée remplie de bonheur, de cadeaux et de bonnes surprises ! 🥳🦌`
+            `Toute l'équipe te souhaite une magnifique journée remplie de bonheur, de cadeaux et de bonnes surprises ! 🥳`
         );
 
         await db.markBirthdayAnnounced(

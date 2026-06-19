@@ -6,12 +6,15 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 const config = require('../config');
 const db = require('../db/queries');
+const { hasTeamRole } = require('../utils/guildSettings');
 
 const messageCooldowns = new Map();
 const spamTracker = new Map();
 const spamWarnings = new Map();
 
-let disboardReminderTimeout = null;
+// Map par guild — un seul timeout partagé causait l'annulation du rappel
+// d'un serveur dès qu'un autre serveur en programmait un nouveau.
+const disboardReminderTimeouts = new Map();
 
 setInterval(() => {
     const limit = Date.now() - config.MESSAGE_COOLDOWN_MS;
@@ -39,8 +42,8 @@ async function isDisboardBumpDone(message) {
     return fullText.includes('Bump effectué');
 }
 
-async function sendDisboardReminder(discordClient, fallbackChannelId) {
-    const bumpSettings = await db.getModuleSettings(process.env.GUILD_ID, 'bump').catch(() => null);
+async function sendDisboardReminder(discordClient, fallbackChannelId, guildId) {
+    const bumpSettings = await db.getModuleSettings(guildId, 'bump').catch(() => null);
 
     const enabled = bumpSettings?.bump_enabled !== false;
     if (!enabled) return;
@@ -66,31 +69,39 @@ async function sendDisboardReminder(discordClient, fallbackChannelId) {
     await channel.send(message).catch(console.error);
 }
 
-async function scheduleDisboardReminder(discordClient, delay, fallbackChannelId) {
-    if (disboardReminderTimeout) clearTimeout(disboardReminderTimeout);
-    disboardReminderTimeout = setTimeout(async () => {
-        await sendDisboardReminder(discordClient, fallbackChannelId);
+async function scheduleDisboardReminder(discordClient, delay, fallbackChannelId, guildId) {
+    const existing = disboardReminderTimeouts.get(guildId);
+    if (existing) clearTimeout(existing);
+    const timeout = setTimeout(async () => {
+        await sendDisboardReminder(discordClient, fallbackChannelId, guildId);
     }, delay);
+    disboardReminderTimeouts.set(guildId, timeout);
 }
 
 async function handleDisboardReminder(message, discordClient) {
-    if (disboardReminderTimeout) clearTimeout(disboardReminderTimeout);
+    const guildId = message.guild.id;
     const nextBumpAt = Date.now() + config.DISBOARD_INTERVAL_MS;
-    await db.saveNextBump(message.guild.id, message.channel.id, nextBumpAt);
-    console.log('📌 Bump Disboard détecté. Rappel enregistré en base et programmé dans 2h.');
-    await scheduleDisboardReminder(discordClient, config.DISBOARD_INTERVAL_MS, message.channel.id);
+    await db.saveNextBump(guildId, message.channel.id, nextBumpAt);
+    console.log(`📌 [${guildId}] Bump Disboard détecté. Rappel enregistré en base et programmé dans 2h.`);
+    await scheduleDisboardReminder(discordClient, config.DISBOARD_INTERVAL_MS, message.channel.id, guildId);
 }
 
 async function restoreDisboardReminder(discordClient) {
-    const saved = await db.getNextBump(process.env.GUILD_ID);
-    if (!saved) return;
-    const delay = Number(saved.next_bump_at) - Date.now();
-    if (delay <= 0) {
-        await sendDisboardReminder(discordClient, saved.channel_id);
-        return;
+    // Boucle sur tous les guilds où le bot est présent — auparavant ne restaurait
+    // que le rappel de Black&Co' (process.env.GUILD_ID), perdant le timer de
+    // tous les autres serveurs à chaque redémarrage/déploiement du bot.
+    for (const [guildId] of discordClient.guilds.cache) {
+        const saved = await db.getNextBump(guildId).catch(() => null);
+        if (!saved) continue;
+
+        const delay = Number(saved.next_bump_at) - Date.now();
+        if (delay <= 0) {
+            await sendDisboardReminder(discordClient, saved.channel_id, guildId);
+            continue;
+        }
+        await scheduleDisboardReminder(discordClient, delay, saved.channel_id, guildId);
+        console.log(`🔁 [${guildId}] Rappel Disboard restauré. Prochain rappel dans ${Math.round(delay / 60000)} min.`);
     }
-    await scheduleDisboardReminder(discordClient, delay, saved.channel_id);
-    console.log(`🔁 Rappel Disboard restauré. Prochain rappel dans ${Math.round(delay / 60000)} min.`);
 }
 
 // ============================================================
@@ -109,17 +120,31 @@ async function handleEmojiUpload(message, discordClient, pendingEmojiRequests) {
         return true;
     }
 
-    const requestId = await db.insertEmojiRequest(message.guild.id, message.author.id, pending.emojiName, attachment.url);
+    const guildId = message.guild.id;
+    const requestId = await db.insertEmojiRequest(guildId, message.author.id, pending.emojiName, attachment.url);
     pendingEmojiRequests.delete(message.author.id);
 
-    const logChannel = await discordClient.channels.fetch(config.LOG_CHANNEL_ID).catch(() => null);
+    // Salon et nom de monnaie lus depuis la config du serveur — auparavant
+    // toujours envoyé sur le salon de logs de Black&Co' quel que soit le serveur.
+    const shopSettings = await db.getModuleSettings(guildId, 'shop').catch(() => null);
+    const serverSettings = await db.getServerSettings(guildId).catch(() => null);
+    const economySettings = await db.getModuleSettings(guildId, 'economy').catch(() => null);
+
+    const logChannelId = shopSettings?.validation_channel_id
+        || shopSettings?.log_channel_id
+        || serverSettings?.log_channel_id
+        || config.LOG_CHANNEL_ID;
+    const moneyName = economySettings?.currency_singular || config.MONEY_NAME;
+    const emojiPrice = shopSettings?.emoji_price || config.SHOP_PRICES.emoji;
+
+    const logChannel = await discordClient.channels.fetch(logChannelId).catch(() => null);
     if (logChannel) {
         await logChannel.send({
             content:
                 `🎨 **Nouvelle demande d'emoji**\n\n` +
                 `👤 Membre : ${message.author}\n` +
                 `🏷️ Nom : **:${pending.emojiName}:**\n` +
-                `💰 Prix : **${config.SHOP_PRICES.emoji} ${config.MONEY_NAME}s**\n` +
+                `💰 Prix : **${emojiPrice} ${moneyName}s**\n` +
                 `🖼️ Image : ${attachment.url}`,
             components: [
                 new ActionRowBuilder().addComponents(
@@ -181,17 +206,20 @@ function hasLink(content) {
     return /(https?:\/\/|www\.|discord\.gg\/|discord\.com\/invite\/)/i.test(content || '');
 }
 
-function isTrustedMember(member) {
+async function isTrustedMember(member) {
     if (!member) return false;
-    const isTeam = member.roles.cache.some(role => role.name === config.TEAM_ROLE_NAME);
-    const isBibiche = member.roles.cache.has(config.ROLE_BIBICHE_ID);
-    return isTeam || isBibiche;
+    const isTeam = await hasTeamRole(member);
+    if (isTeam) return true;
+    // Rôle "de confiance" optionnel — configurable par serveur, fallback Black&Co'
+    const serverSettings = await db.getServerSettings(member.guild.id).catch(() => null);
+    const trustedRoleId = serverSettings?.trusted_role_id || config.ROLE_BIBICHE_ID;
+    return trustedRoleId ? member.roles.cache.has(trustedRoleId) : false;
 }
 
 async function handleAntiSpam(message, discordClient) {
     const member = message.member;
     if (!member) return false;
-    if (isTrustedMember(member)) return false;
+    if (await isTrustedMember(member)) return false;
 
     const guildId = message.guild.id;
 

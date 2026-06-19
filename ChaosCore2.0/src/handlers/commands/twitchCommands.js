@@ -4,29 +4,7 @@
 
 const config = require('../../config');
 const db = require('../../db/queries');
-
-// ============================================================
-// PERMISSIONS
-// ============================================================
-
-function hasTeamRole(member) {
-    return member.roles.cache.some(
-        role => role.name === config.TEAM_ROLE_NAME
-    );
-}
-
-function requireTeam(interaction) {
-    if (!hasTeamRole(interaction.member)) {
-        interaction.reply({
-            content: "❌ Tu n'as pas l'autorisation d'utiliser cette commande.",
-            flags: 64,
-        });
-
-        return false;
-    }
-
-    return true;
-}
+const { requireTeam } = require('../../utils/guildSettings');
 
 // ============================================================
 // HELPERS
@@ -62,7 +40,7 @@ async function handleTwitchCommand(interaction, { sendContestLog }) {
 // ============================================================
 
 async function handleTwitchLinkCommand(interaction, sendContestLog) {
-    if (!requireTeam(interaction)) {
+    if (!await requireTeam(interaction)) {
         return;
     }
 
@@ -92,7 +70,7 @@ async function handleTwitchLinkCommand(interaction, sendContestLog) {
 // ============================================================
 
 async function handleTwitchLinksCommand(interaction) {
-    if (!requireTeam(interaction)) {
+    if (!await requireTeam(interaction)) {
         return;
     }
 

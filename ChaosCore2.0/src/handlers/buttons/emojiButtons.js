@@ -1,6 +1,15 @@
 const axios = require('axios');
 const config = require('../../config');
 const db = require('../../db/queries');
+const { resolveShopPrices } = require('../../services/shop');
+
+async function getEmojiPriceAndCurrency(guildId) {
+    const shopSettings = await db.getModuleSettings(guildId, 'shop').catch(() => null);
+    const economySettings = await db.getModuleSettings(guildId, 'economy').catch(() => null);
+    const prices = resolveShopPrices(shopSettings);
+    const moneyName = economySettings?.currency_singular || config.MONEY_NAME;
+    return { price: prices.emoji, moneyName };
+}
 
 const pendingEmojiRequests = new Map();
 
@@ -40,14 +49,15 @@ async function handleApproveEmoji(interaction, guild) {
     // Lire le solde avec guild_id
     const guildId = interaction.guildId;
     const userData = await db.getUserPoints(guildId, request.user_id);
+    const { price, moneyName } = await getEmojiPriceAndCurrency(guildId);
 
-    if (userData.balance < config.SHOP_PRICES.emoji) {
+    if (userData.balance < price) {
         await db.updateEmojiRequestStatus(requestId, 'rejected');
         await replyEphemeral(interaction, '❌ Solde insuffisant. Demande refusée automatiquement.');
         return;
     }
 
-    await db.addPoints(guildId, request.user_id, -config.SHOP_PRICES.emoji);
+    await db.addPoints(guildId, request.user_id, -price);
 
     const imageResponse = await axios.get(request.image_url, { responseType: 'arraybuffer' });
     const emoji = await guild.emojis.create({
@@ -63,7 +73,7 @@ async function handleApproveEmoji(interaction, guild) {
         `✅ Emoji créé avec succès !\n\n` +
         `👤 Membre : <@${request.user_id}>\n` +
         `🎨 Emoji : ${emoji}\n` +
-        `💰 Débité : **${config.SHOP_PRICES.emoji} ${config.MONEY_NAME}s**`
+        `💰 Débité : **${price} ${moneyName}s**`
     );
 }
 
@@ -86,7 +96,8 @@ async function handleEmojiModal(interaction) {
         return true;
     }
 
-    pendingEmojiRequests.set(user.id, { emojiName, price: config.SHOP_PRICES.emoji });
+    const { price } = await getEmojiPriceAndCurrency(interaction.guildId);
+    pendingEmojiRequests.set(user.id, { emojiName, price });
 
     await replyEphemeral(interaction,
         `🎨 Emoji demandé : **:${emojiName}:**\n\n` +

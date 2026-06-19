@@ -2,10 +2,20 @@ const { EmbedBuilder } = require('discord.js');
 const db = require('../../db/queries');
 const config = require('../../config');
 
-const MIN_BET = 50;
-const MAX_BET = 150;
-const SCRATCH_COST = 10;
+const DEFAULT_MIN_BET = 50;
+const DEFAULT_MAX_BET = 150;
+const DEFAULT_SCRATCH_COST = 10;
 const SCRATCH_PRIZES = [0, 0, 0, 2, 5, 10, 15, 20, 25, 50, 100];
+
+async function getCasinoContext(guildId) {
+    const economySettings = await db.getModuleSettings(guildId, 'economy').catch(() => null);
+    return {
+        moneyName: economySettings?.currency_singular || config.MONEY_NAME,
+        minBet: economySettings?.casino_min_bet || DEFAULT_MIN_BET,
+        maxBet: economySettings?.casino_max_bet || DEFAULT_MAX_BET,
+        scratchCost: economySettings?.casino_scratch_cost || DEFAULT_SCRATCH_COST,
+    };
+}
 
 async function logCasino(guildId, userId, game, mise, gain) {
     try {
@@ -38,9 +48,10 @@ async function handleCoinFlip(interaction) {
     await interaction.deferReply({ flags: 64 });
     const mise = interaction.options.getInteger('mise');
     const choix = interaction.options.getString('choix');
-    if (mise < MIN_BET || mise > MAX_BET) return interaction.editReply(`❌ La mise doit être entre **${MIN_BET}** et **${MAX_BET}** ${config.MONEY_NAME}s.`);
+    const { moneyName, minBet, maxBet } = await getCasinoContext(interaction.guildId);
+    if (mise < minBet || mise > maxBet) return interaction.editReply(`❌ La mise doit être entre **${minBet}** et **${maxBet}** ${moneyName}s.`);
     const data = await db.getUserPoints(interaction.guildId, interaction.user.id);
-    if (data.balance < mise) return interaction.editReply(`❌ Solde insuffisant. Tu as **${data.balance}** ${config.MONEY_NAME}s.`);
+    if (data.balance < mise) return interaction.editReply(`❌ Solde insuffisant. Tu as **${data.balance}** ${moneyName}s.`);
     const resultat = Math.random() < 0.5 ? 'pile' : 'face';
     const gagne = resultat === choix;
     const newBalance = await db.addPoints(interaction.guildId, interaction.user.id, gagne ? mise : -mise);
@@ -51,8 +62,8 @@ async function handleCoinFlip(interaction) {
         .addFields(
             { name: 'Ton choix', value: choix === 'pile' ? '🪙 Pile' : '🎭 Face', inline: true },
             { name: 'Résultat', value: resultat === 'pile' ? '🪙 Pile' : '🎭 Face', inline: true },
-            { name: gagne ? 'Gain' : 'Perte', value: `${gagne ? '+' : '-'}${mise} ${config.MONEY_NAME}s`, inline: true },
-            { name: 'Nouveau solde', value: `💰 ${newBalance} ${config.MONEY_NAME}s`, inline: false },
+            { name: gagne ? 'Gain' : 'Perte', value: `${gagne ? '+' : '-'}${mise} ${moneyName}s`, inline: true },
+            { name: 'Nouveau solde', value: `💰 ${newBalance} ${moneyName}s`, inline: false },
         )
         .setFooter({ text: 'ChaosCore • Casino' });
     await interaction.editReply({ embeds: [embed] });
@@ -61,9 +72,10 @@ async function handleCoinFlip(interaction) {
 async function handleDice(interaction) {
     await interaction.deferReply({ flags: 64 });
     const mise = interaction.options.getInteger('mise');
-    if (mise < MIN_BET || mise > MAX_BET) return interaction.editReply(`❌ La mise doit être entre **${MIN_BET}** et **${MAX_BET}** ${config.MONEY_NAME}s.`);
+    const { moneyName, minBet, maxBet } = await getCasinoContext(interaction.guildId);
+    if (mise < minBet || mise > maxBet) return interaction.editReply(`❌ La mise doit être entre **${minBet}** et **${maxBet}** ${moneyName}s.`);
     const data = await db.getUserPoints(interaction.guildId, interaction.user.id);
-    if (data.balance < mise) return interaction.editReply(`❌ Solde insuffisant. Tu as **${data.balance}** ${config.MONEY_NAME}s.`);
+    if (data.balance < mise) return interaction.editReply(`❌ Solde insuffisant. Tu as **${data.balance}** ${moneyName}s.`);
     let deJoueur, deBot;
     do {
         deJoueur = Math.floor(Math.random() * 6) + 1;
@@ -78,8 +90,8 @@ async function handleDice(interaction) {
         .addFields(
             { name: 'Ton dé', value: `🎲 ${deJoueur}`, inline: true },
             { name: 'Dé du bot', value: `🎲 ${deBot}`, inline: true },
-            { name: gagne ? 'Gain' : 'Perte', value: `${gagne ? '+' : '-'}${mise} ${config.MONEY_NAME}s`, inline: true },
-            { name: 'Nouveau solde', value: `💰 ${newBalance} ${config.MONEY_NAME}s`, inline: false },
+            { name: gagne ? 'Gain' : 'Perte', value: `${gagne ? '+' : '-'}${mise} ${moneyName}s`, inline: true },
+            { name: 'Nouveau solde', value: `💰 ${newBalance} ${moneyName}s`, inline: false },
         )
         .setFooter({ text: 'ChaosCore • Casino' });
     await interaction.editReply({ embeds: [embed] });
@@ -87,9 +99,10 @@ async function handleDice(interaction) {
 
 async function handleScratch(interaction) {
     await interaction.deferReply({ flags: 64 });
+    const { moneyName, scratchCost } = await getCasinoContext(interaction.guildId);
     const data = await db.getUserPoints(interaction.guildId, interaction.user.id);
-    if (data.balance < SCRATCH_COST) return interaction.editReply(`❌ Solde insuffisant. Un ticket coûte **${SCRATCH_COST}** ${config.MONEY_NAME}s. Tu as **${data.balance}**.`);
-    await db.addPoints(interaction.guildId, interaction.user.id, -SCRATCH_COST);
+    if (data.balance < scratchCost) return interaction.editReply(`❌ Solde insuffisant. Un ticket coûte **${scratchCost}** ${moneyName}s. Tu as **${data.balance}**.`);
+    await db.addPoints(interaction.guildId, interaction.user.id, -scratchCost);
     const gain = SCRATCH_PRIZES[Math.floor(Math.random() * SCRATCH_PRIZES.length)];
     let newBalance;
     if (gain > 0) {
@@ -98,7 +111,7 @@ async function handleScratch(interaction) {
         const updated = await db.getUserPoints(interaction.guildId, interaction.user.id);
         newBalance = updated.balance;
     }
-    await logCasino(interaction.guildId, interaction.user.id, 'gratter', SCRATCH_COST, gain - SCRATCH_COST);
+    await logCasino(interaction.guildId, interaction.user.id, 'gratter', scratchCost, gain - scratchCost);
     const fakePool = SCRATCH_PRIZES.filter(p => p !== gain);
     const case1 = fakePool[Math.floor(Math.random() * fakePool.length)];
     const case2 = fakePool[Math.floor(Math.random() * fakePool.length)];
@@ -114,9 +127,9 @@ async function handleScratch(interaction) {
             `└──────────────────────────┘`
         )
         .addFields(
-            { name: 'Mise', value: `-${SCRATCH_COST} ${config.MONEY_NAME}s`, inline: true },
-            { name: gagne ? '🎉 Gain' : '😔 Résultat', value: gagne ? `+${gain} ${config.MONEY_NAME}s` : 'Rien cette fois !', inline: true },
-            { name: 'Nouveau solde', value: `💰 ${newBalance} ${config.MONEY_NAME}s`, inline: true },
+            { name: 'Mise', value: `-${scratchCost} ${moneyName}s`, inline: true },
+            { name: gagne ? '🎉 Gain' : '😔 Résultat', value: gagne ? `+${gain} ${moneyName}s` : 'Rien cette fois !', inline: true },
+            { name: 'Nouveau solde', value: `💰 ${newBalance} ${moneyName}s`, inline: true },
         )
         .setFooter({ text: 'ChaosCore • Casino' });
     await interaction.editReply({ embeds: [embed] });

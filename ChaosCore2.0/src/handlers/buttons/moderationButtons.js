@@ -1,11 +1,6 @@
 const config = require('../../config');
 const db = require('../../db/queries');
-
-function hasModeratorPermission(member) {
-    const isModerator = member.roles.cache.has(config.MODERATOR_ROLE_ID);
-    const isTeam = member.roles.cache.some(role => role.name === config.TEAM_ROLE_NAME);
-    return isModerator || isTeam;
-}
+const { hasModeratorPower } = require('../../utils/guildSettings');
 
 async function getTargetMember(guild, userId) {
     return guild.members.fetch(userId).catch(() => null);
@@ -24,7 +19,7 @@ async function handleModerationButton(interaction) {
 
     await interaction.deferReply({ flags: 64 });
 
-    if (!hasModeratorPermission(interaction.member)) {
+    if (!await hasModeratorPower(interaction.member)) {
         await interaction.editReply({ content: "❌ Tu n'as pas l'autorisation d'utiliser ce bouton." });
         return true;
     }

@@ -1,15 +1,12 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const config = require('../../config');
 const db = require('../../db/queries');
-
-function hasTeamRole(member) {
-    return member.roles.cache.some(role => role.name === config.TEAM_ROLE_NAME);
-}
+const { hasTeamRole } = require('../../utils/guildSettings');
 
 async function handleSupportTicketCommand(interaction) {
     if (interaction.commandName !== 'setupticket') return false;
 
-    if (!hasTeamRole(interaction.member) && !interaction.member.permissions.has('Administrator')) {
+    if (!await hasTeamRole(interaction.member) && !interaction.member.permissions.has('Administrator')) {
         await interaction.reply({ content: "❌ Tu n'as pas l'autorisation d'utiliser cette commande.", flags: 64 });
         return true;
     }
