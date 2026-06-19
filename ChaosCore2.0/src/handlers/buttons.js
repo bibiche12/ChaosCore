@@ -4,7 +4,7 @@
 
 const { handleModerationButton } = require('./buttons/moderationButtons');
 const { handleRoleButton } = require('./buttons/roleButtons');
-const { handleSupportTicketButton } = require('./buttons/supportTicketButtons');
+const { handleSupportTicketButton, handleSupportCategorySelect } = require('./buttons/supportTicketButtons');
 
 const {
     handleOnboardingButton,
@@ -62,6 +62,7 @@ async function handleModal(interaction, discordClient, sendLog) {
 
 async function handleSelectMenu(interaction) {
     if (await handleShopSelectMenu(interaction)) return;
+    if (await handleSupportCategorySelect(interaction)) return;
 }
 
 // ============================================================

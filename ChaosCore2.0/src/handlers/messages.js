@@ -178,12 +178,14 @@ async function handleMoneyGain(message) {
     const excludedChannels = economySettings?.excluded_channels
         ? economySettings.excluded_channels.split('\n').map(s => s.trim()).filter(Boolean) : [];
 
+    // Le mode 'all' signifie "gain partout" — il ne doit pas être restreint
+    // par les salons fixes de Black&Co'. Ce fallback faisait que tout serveur
+    // resté en mode par défaut voyait son économie limitée aux salons d'un
+    // autre serveur, à l'opposé du comportement attendu.
     if (channelsMode === 'whitelist' && allowedChannels.length > 0) {
         if (!allowedChannels.includes(message.channel.id)) return;
     } else if (channelsMode === 'blacklist' && excludedChannels.length > 0) {
         if (excludedChannels.includes(message.channel.id)) return;
-    } else if (channelsMode === 'all' && config.ALLOWED_MONEY_CHANNELS?.length > 0) {
-        if (!config.ALLOWED_MONEY_CHANNELS.includes(message.channel.id)) return;
     }
 
     const userId = message.author.id;
@@ -234,6 +236,10 @@ async function handleAntiSpam(message, discordClient) {
     const linkLimit = securitySettings?.link_limit || config.ANTI_SPAM_LINK_LIMIT;
     const linkWindow = (securitySettings?.link_time_window || 30) * 1000;
     const fileLimit = securitySettings?.file_limit || config.ANTI_SPAM_FILE_LIMIT;
+    // file_time_window est bien configurable dans le dashboard (security_files.ejs)
+    // mais n'était jamais lu ici — le tracking fichiers réutilisait par erreur
+    // linkWindow, rendant ce réglage invisible et sans effet.
+    const fileWindow = (securitySettings?.file_time_window || 30) * 1000;
     const timeoutMs = (securitySettings?.spam_mute_duration || 10) * 60 * 1000;
 
     const linkWhitelist = securitySettings?.link_whitelist
@@ -258,7 +264,7 @@ async function handleAntiSpam(message, discordClient) {
 
     data.messages = data.messages.filter(t => now - t <= messageWindow);
     data.links    = data.links.filter(t => now - t <= linkWindow);
-    data.files    = data.files.filter(t => now - t <= linkWindow);
+    data.files    = data.files.filter(t => now - t <= fileWindow);
 
     spamTracker.set(userId, data);
 

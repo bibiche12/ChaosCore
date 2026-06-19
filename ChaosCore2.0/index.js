@@ -395,7 +395,11 @@ app.get('/test', (req, res) => res.send('TEST OK ✅'));
 
 app.post('/api/settings/reload/:guildId', requireApiKey, async (req, res) => {
     const { guildId } = req.params;
-    console.log(`🔄 [${guildId}] Rechargement des settings depuis le dashboard`);
+    // Invalide réellement le cache de guildSettings.js — auparavant cette route
+    // ne faisait que logguer sans effet, le cache restait périmé jusqu'à 60s.
+    const { invalidateCache } = require('./src/utils/guildSettings');
+    invalidateCache(guildId);
+    console.log(`🔄 [${guildId}] Cache settings invalidé depuis le dashboard`);
     res.json({ ok: true, message: 'Settings rechargés' });
 });
 

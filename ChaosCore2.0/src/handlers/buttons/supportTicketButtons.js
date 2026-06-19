@@ -5,6 +5,7 @@ const {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
+    StringSelectMenuBuilder,
 } = require('discord.js');
 
 const config = require('../../config');
@@ -27,6 +28,18 @@ async function handleSupportTicketButton(interaction) {
     return false;
 }
 
+// Le dashboard permet de configurer une liste de catégories (une par ligne)
+// dans /support/categories, mais le bot ne s'en servait jamais : le clic sur
+// "Ouvrir un ticket" créait toujours directement le salon sans demander de
+// catégorie. On affiche désormais un menu de sélection avant de créer le ticket.
+async function handleSupportCategorySelect(interaction) {
+    if (interaction.customId !== 'support_ticket_category_select') return false;
+    await interaction.deferUpdate();
+    const category = interaction.values[0];
+    await createSupportTicketChannel(interaction, category);
+    return true;
+}
+
 async function openSupportTicket(interaction) {
     await interaction.deferReply({ flags: 64 });
 
@@ -38,6 +51,37 @@ async function openSupportTicket(interaction) {
         await interaction.editReply({ content: `❌ Tu as déjà un ticket ouvert : <#${existingTicket.channel_id}>` });
         return;
     }
+
+    const supportSettings = await db.getModuleSettings(guildId, 'support').catch(() => null);
+
+    // Si les catégories sont activées dans le dashboard, on affiche un menu
+    // de sélection avant de créer le ticket plutôt que de le créer directement.
+    if (supportSettings?.categories_enabled && supportSettings?.categories) {
+        const categoryLabels = supportSettings.categories
+            .split('\n')
+            .map(c => c.trim())
+            .filter(Boolean)
+            .slice(0, 25); // limite Discord pour un select menu
+
+        if (categoryLabels.length > 0) {
+            const menu = new StringSelectMenuBuilder()
+                .setCustomId('support_ticket_category_select')
+                .setPlaceholder('Choisis une catégorie')
+                .addOptions(categoryLabels.map(label => ({ label: label.slice(0, 100), value: label.slice(0, 100) })));
+
+            await interaction.editReply({
+                content: '🎫 Choisis la catégorie qui correspond le mieux à ta demande :',
+                components: [new ActionRowBuilder().addComponents(menu)],
+            });
+            return;
+        }
+    }
+
+    await createSupportTicketChannel(interaction, null);
+}
+
+async function createSupportTicketChannel(interaction, categoryLabel) {
+    const guildId = interaction.guild.id;
 
     // Lire settings depuis guild_module_settings (dashboard) d'abord, sinon config
     const supportSettings = await db.getModuleSettings(guildId, 'support').catch(() => null);
@@ -96,6 +140,10 @@ async function openSupportTicket(interaction) {
         .setDescription(msgContent)
         .setFooter({ text: 'ChaosCore • Support' });
 
+    if (categoryLabel) {
+        embed.addFields({ name: 'Catégorie', value: categoryLabel });
+    }
+
     const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('support_ticket_close').setLabel('Fermer le ticket').setEmoji('🔒').setStyle(ButtonStyle.Danger)
     );
@@ -105,7 +153,11 @@ async function openSupportTicket(interaction) {
     if (pingTeam && teamRoleId) pingContent += ` <@&${teamRoleId}>`;
 
     await ticketChannel.send({ content: pingContent, embeds: [embed], components: [row] });
-    await interaction.editReply({ content: `✅ Ton ticket a été créé : ${ticketChannel}` });
+
+    const confirmContent = `✅ Ton ticket a été créé : ${ticketChannel}`;
+    if (interaction.deferred && !interaction.replied) {
+        await interaction.editReply({ content: confirmContent, components: [] });
+    }
 }
 
 async function closeSupportTicket(interaction) {
@@ -136,4 +188,4 @@ async function closeSupportTicket(interaction) {
     setTimeout(() => { interaction.channel.delete('Ticket support fermé').catch(() => null); }, 5000);
 }
 
-module.exports = { handleSupportTicketButton };
+module.exports = { handleSupportTicketButton, handleSupportCategorySelect };
