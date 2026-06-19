@@ -355,7 +355,7 @@ app.get('/overlay/latest', async (req, res) => {
         const shopGage          = twitchSettings?.overlay_shop_gage          !== false;
         const shopPhrase        = twitchSettings?.overlay_shop_phrase        !== false;
         const shopRole          = twitchSettings?.overlay_shop_role          || false;
-        const events = await db.getLatestOverlayEvents(20);
+        const events = await db.getLatestOverlayEvents(guildId, 20);
         if (!events || events.length === 0) return res.json({ active: false, items: [], settings: getOverlaySettings(twitchSettings) });
         const filtered = events.filter(event => {
             if (event.source === 'twitch') return showChannelPoints;

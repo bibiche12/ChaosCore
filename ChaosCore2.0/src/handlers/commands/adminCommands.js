@@ -109,7 +109,9 @@ async function handleClearCommand(interaction) {
 async function handleClearOverlayCommand(interaction) {
     if (!await requireTeam(interaction)) return;
     await interaction.deferReply({ flags: 64 });
-    await db.clearOverlayEvents();
+    // guildId requis — sans filtre, cette commande effaçait les gages
+    // overlay de TOUS les serveurs ChaosCore en une seule exécution.
+    await db.clearOverlayEvents(interaction.guildId);
     await interaction.editReply({ content: '✅ Tous les gages overlay ont été retirés.' });
 }
 
@@ -121,6 +123,7 @@ async function handleTestOverlayCommand(interaction, sendContestLog) {
     const userInput = interaction.options.getString('texte');
 
     const event = await db.insertChannelPointEvent({
+        guildId: interaction.guildId,
         twitchName: interaction.user.username,
         discordId: interaction.user.id,
         rewardName,

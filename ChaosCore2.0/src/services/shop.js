@@ -97,6 +97,24 @@ async function setupShop(shopChannel, guildId) {
             `📌 Validation : manuelle`,
         components: [buildBuyButton('shop_buy_phrase', 'Acheter', '🛒')],
     });
+
+    // Articles personnalisés ajoutés depuis le dashboard (Magasin → Items).
+    // Ces articles n'ont pas de bouton d'achat dédié (le système de demandes
+    // est propre aux 4 types ci-dessus) — ils sont affichés à titre indicatif
+    // pour que les membres connaissent les offres spécifiques du serveur,
+    // à acheter via /demande comme une demande générique.
+    const customItems = await db.getActiveShopItems(guildId).catch(() => []);
+    if (customItems.length > 0) {
+        const lines = customItems.map(item =>
+            `**${item.name}** (${item.type}) — 💰 ${item.price} ${moneyName}s${item.description ? `\n${item.description}` : ''}`
+        );
+        await shopChannel.send({
+            content:
+                `📦 **Articles supplémentaires du serveur**\n\n` +
+                lines.join('\n\n') +
+                `\n\n📌 Utilise \`/demande\` pour faire une demande sur l'un de ces articles.`,
+        });
+    }
 }
 
 async function processLivePhrases(discordClient, guildId) {

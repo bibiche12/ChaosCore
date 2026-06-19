@@ -198,7 +198,7 @@ async function handleChannelPointRedemption(event, guildId, sendContestLog) {
     }
 
     const savedEvent = await db.insertChannelPointEvent({
-        twitchName, discordId, rewardName, userInput,
+        guildId, twitchName, discordId, rewardName, userInput,
         ticketsAwarded: rewardConfig.tickets,
         showOnOverlay: rewardConfig.show_on_overlay,
     });
@@ -262,6 +262,7 @@ async function handleOverlayEvent(type, event, guildId) {
     }
 
     await db.insertChannelPointEvent({
+        guildId,
         twitchName,
         discordId: null,
         rewardName,

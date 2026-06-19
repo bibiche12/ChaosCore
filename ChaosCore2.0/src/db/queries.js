@@ -77,6 +77,7 @@ async function initDatabase() {
     await pool.query(`
         CREATE TABLE IF NOT EXISTS channel_point_events (
             id SERIAL PRIMARY KEY,
+            guild_id TEXT,
             twitch_name TEXT NOT NULL,
             discord_id TEXT,
             reward_name TEXT NOT NULL,
@@ -88,6 +89,14 @@ async function initDatabase() {
             completed_at TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+    `);
+
+    // Migration — ajoute guild_id si la table existait déjà sans cette colonne.
+    // Sans ça, l'overlay OBS d'un serveur affichait les récompenses Channel
+    // Points de TOUS les serveurs ChaosCore, visibles en direct sur le stream.
+    await pool.query(`
+        ALTER TABLE channel_point_events
+        ADD COLUMN IF NOT EXISTS guild_id TEXT;
     `);
 
     await pool.query(`
@@ -312,6 +321,23 @@ async function initDatabase() {
             updated_at TIMESTAMP DEFAULT NOW()
         );
     `);
+
+    // Articles boutique configurables par serveur — la vue dashboard
+    // shop_items.ejs avait déjà les formulaires add/update/delete mais
+    // aucune table ni route n'existait derrière, rendant la page inopérante.
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS shop_items (
+            id SERIAL PRIMARY KEY,
+            guild_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL,
+            description TEXT,
+            price INTEGER NOT NULL DEFAULT 0,
+            active BOOLEAN NOT NULL DEFAULT true,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        );
+    `);
 // Ajouter dans initDatabase() dans src/db/queries.js avant le console.log :
 
     await pool.query(`
@@ -378,6 +404,7 @@ const tickets = require('./modules/tickets')(pool);
 const twitch = require('./modules/twitch')(pool);
 const overlay = require('./modules/overlay')(pool);
 const shop = require('./modules/shop')(pool);
+const shopItems = require('./modules/shopItems')(pool);
 const emojis = require('./modules/emojis')(pool);
 const temporaryRoles = require('./modules/temporaryRoles')(pool);
 const moderation = require('./modules/moderation')(pool);
@@ -424,6 +451,7 @@ module.exports = {
     ...twitch,
     ...overlay,
     ...shop,
+    ...shopItems,
     ...emojis,
     ...temporaryRoles,
     ...moderation,

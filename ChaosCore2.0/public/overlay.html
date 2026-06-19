@@ -1,91 +1,134 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <title>ChaosCore Overlay</title>
-    <style>
-        body { margin:0; overflow:hidden; background:transparent; font-family:Arial,sans-serif; }
+module.exports = (pool) => {
 
-        #ticker {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            height: 46px;
-            display: none;
-            align-items: center;
-            overflow: hidden;
-            background: rgba(0,0,0,0.92);
-            border-top: 3px solid var(--border-color, #9b5cff);
-        }
+    // ============================================================
+    // POINTS DE CHAÎNE / OVERLAY TWITCH
+    // ============================================================
 
-        #ticker.visible { display: flex; }
+    async function insertChannelPointEvent({
+        guildId,
+        twitchName,
+        discordId,
+        rewardName,
+        userInput,
+        ticketsAwarded,
+        showOnOverlay,
+    }) {
+        const result = await pool.query(
+            `INSERT INTO channel_point_events
+             (guild_id, twitch_name, discord_id, reward_name, user_input, tickets_awarded, show_on_overlay)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING *`,
+            [
+                guildId || null,
+                twitchName.toLowerCase(),
+                discordId || null,
+                rewardName,
+                userInput || '',
+                ticketsAwarded || 0,
+                showOnOverlay || false,
+            ]
+        );
 
-        #track {
-            padding-left: 100%;
-            white-space: nowrap;
-            color: white;
-            font-size: var(--font-size, 24px);
-            font-weight: bold;
-            animation: scrollText var(--scroll-speed, 35s) linear infinite;
-        }
+        return result.rows[0];
+    }
 
-        @keyframes scrollText {
-            from { transform: translateX(0); }
-            to { transform: translateX(-100%); }
-        }
-    </style>
-</head>
-<body>
-    <div id="ticker">
-        <div id="track"></div>
-    </div>
+    async function completeChannelPointEvent(id, completedBy) {
+        const result = await pool.query(
+            `UPDATE channel_point_events
+             SET completed = true,
+                 completed_by = $2,
+                 completed_at = CURRENT_TIMESTAMP
+             WHERE id = $1
+             RETURNING *`,
+            [id, completedBy]
+        );
 
-    <script>
-        const ticker = document.getElementById('ticker');
-        const track = document.getElementById('track');
+        return result.rows[0] || null;
+    }
 
-        // Lire le guildId depuis l'URL (?guild=XXXXX)
-        const params = new URLSearchParams(window.location.search);
-        const guildId = params.get('guild') || '';
+    async function clearOverlayEvents(guildId) {
+        // guildId requis — sans filtre, ceci effaçait les événements overlay
+        // de TOUS les serveurs d'un seul coup. La commande /clearoverlay
+        // d'un serveur ne doit affecter que ce serveur.
+        await pool.query(`
+            UPDATE channel_point_events
+            SET completed = true,
+                completed_at = CURRENT_TIMESTAMP
+            WHERE completed = false
+            AND guild_id = $1
+        `, [guildId]);
 
-        function formatItem(item) {
-            return `${item.rewardName || 'Chaos'} ${item.userInput || ''}`.trim();
-        }
+        await pool.query(`
+            UPDATE shop_requests
+            SET completed = true
+            WHERE type IN ('gage', 'phrase')
+            AND status = 'approved'
+            AND completed = false
+            AND guild_id = $1
+        `, [guildId]);
+    }
 
-        async function refreshOverlay() {
-            try {
-                const url = `/overlay/latest?t=${Date.now()}${guildId ? '&guild=' + guildId : ''}`;
-                const response = await fetch(url, { cache: 'no-store' });
-                const data = await response.json();
+    async function getLatestOverlayEvents(guildId, limit = 10) {
+        // guildId requis — auparavant cette requête ignorait totalement le
+        // serveur d'origine : l'overlay OBS de chaque serveur affichait en
+        // direct sur le stream les récompenses Channel Points et achats
+        // boutique de TOUS les serveurs ChaosCore confondus.
+        const twitchEvents = await pool.query(
+            `SELECT
+                id,
+                'twitch' AS source,
+                reward_name AS title,
+                user_input AS text,
+                twitch_name AS author,
+                created_at
+             FROM channel_point_events
+             WHERE show_on_overlay = true
+             AND completed = false
+             AND guild_id = $1`,
+            [guildId]
+        );
 
-                // Appliquer les settings visuels
-                if (data.settings) {
-                    document.documentElement.style.setProperty('--border-color', data.settings.border_color || '#9b5cff');
-                    document.documentElement.style.setProperty('--font-size', (data.settings.font_size || 24) + 'px');
-                    document.documentElement.style.setProperty('--scroll-speed', (data.settings.scroll_speed || 35) + 's');
-                }
+        const shopEvents = await pool.query(
+            `SELECT
+                id,
+                type AS source,
+                CASE
+                    WHEN type = 'gage' THEN '😈 Gage boutique'
+                    WHEN type = 'phrase' THEN '📢 Phrase live'
+                    ELSE type
+                END AS title,
+                CASE
+                    WHEN type = 'phrase' THEN content::json->>'text'
+                    ELSE content
+                END AS text,
+                user_id AS author,
+                created_at
+             FROM shop_requests
+             WHERE status = 'approved'
+             AND completed = false
+             AND type IN ('gage', 'phrase')
+             AND guild_id = $1`,
+            [guildId]
+        );
 
-                if (!data.active || !data.items || data.items.length === 0) {
-                    hideOverlay();
-                    return;
-                }
+        const allEvents = [
+            ...twitchEvents.rows,
+            ...shopEvents.rows,
+        ]
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+            .slice(0, limit);
 
-                const message = data.items.map(formatItem).join('   -   ');
-                track.innerText = `${message}   -   ${message}`;
-                ticker.classList.add('visible');
-            } catch (error) {
-                hideOverlay();
-            }
-        }
+        return allEvents;
+    }
 
-        function hideOverlay() {
-            ticker.classList.remove('visible');
-            track.innerText = '';
-        }
+    // ============================================================
+    // EXPORTS
+    // ============================================================
 
-        refreshOverlay();
-        setInterval(refreshOverlay, 3000);
-    </script>
-</body>
-</html>
+    return {
+        insertChannelPointEvent,
+        completeChannelPointEvent,
+        clearOverlayEvents,
+        getLatestOverlayEvents,
+    };
+};
