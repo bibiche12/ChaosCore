@@ -109,7 +109,12 @@ async function restoreDisboardReminder(discordClient) {
 // ============================================================
 
 async function handleEmojiUpload(message, discordClient, pendingEmojiRequests) {
-    const pending = pendingEmojiRequests.get(message.author.id);
+    const guildId = message.guild.id;
+    // Même clé composite que côté emojiButtons.js — sinon une demande
+    // d'emoji en cours sur un serveur pouvait être confondue avec celle
+    // d'un autre serveur pour un même membre.
+    const pendingKey = `${guildId}:${message.author.id}`;
+    const pending = pendingEmojiRequests.get(pendingKey);
     if (!pending) return false;
     if (message.attachments.size === 0) return false;
 
@@ -120,9 +125,8 @@ async function handleEmojiUpload(message, discordClient, pendingEmojiRequests) {
         return true;
     }
 
-    const guildId = message.guild.id;
     const requestId = await db.insertEmojiRequest(guildId, message.author.id, pending.emojiName, attachment.url);
-    pendingEmojiRequests.delete(message.author.id);
+    pendingEmojiRequests.delete(pendingKey);
 
     // Salon et nom de monnaie lus depuis la config du serveur — auparavant
     // toujours envoyé sur le salon de logs de Black&Co' quel que soit le serveur.
@@ -248,9 +252,13 @@ async function handleAntiSpam(message, discordClient) {
 
     const now = Date.now();
     const userId = message.author.id;
+    // Clé composite guildId:userId — auparavant indexé uniquement par userId,
+    // l'activité d'un même membre sur un autre serveur ChaosCore contribuait
+    // au même compteur de spam, pouvant déclencher un mute injustifié.
+    const trackerKey = `${message.guild.id}:${userId}`;
 
-    if (!spamTracker.has(userId)) spamTracker.set(userId, { messages: [], links: [], files: [] });
-    const data = spamTracker.get(userId);
+    if (!spamTracker.has(trackerKey)) spamTracker.set(trackerKey, { messages: [], links: [], files: [] });
+    const data = spamTracker.get(trackerKey);
 
     data.messages.push(now);
 
@@ -266,7 +274,7 @@ async function handleAntiSpam(message, discordClient) {
     data.links    = data.links.filter(t => now - t <= linkWindow);
     data.files    = data.files.filter(t => now - t <= fileWindow);
 
-    spamTracker.set(userId, data);
+    spamTracker.set(trackerKey, data);
 
     let reason = null;
     if (data.messages.length >= messageLimit) reason = 'spam de messages';
@@ -275,7 +283,7 @@ async function handleAntiSpam(message, discordClient) {
 
     if (!reason) return false;
 
-    spamWarnings.set(userId, now);
+    spamWarnings.set(trackerKey, now);
 
     await message.channel.send(
         `⚠️ ${message.author}, comportement détecté comme **${reason}**.\n` +
@@ -289,7 +297,6 @@ async function handleAntiSpam(message, discordClient) {
             `🔇 **Auto-mute sécurité**\n\n` +
             `👤 Membre : ${message.author}\n` +
             `📌 Raison : **${reason}**\n` +
-            `🦌 Statut : non Bibiche\n` +
             `⏱️ Durée : **${securitySettings?.spam_mute_duration || 10} minutes**\n` +
             `📍 Salon : ${message.channel}\n\n` +
             `La gestion manuelle pourra être faite en MP.`

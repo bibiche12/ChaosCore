@@ -11,6 +11,7 @@ const {
 const config = require('../../config');
 const db = require('../../db/queries');
 const { resolveShopPrices } = require('../../services/shop');
+const { requireModerator } = require('../../utils/guildSettings');
 
 async function getShopContext(guildId) {
     const shopSettings = await db.getModuleSettings(guildId, 'shop').catch(() => null);
@@ -106,12 +107,12 @@ async function handleBuyRoleButton(interaction) {
 async function handleConfirmRolePurchase(interaction, discordClient) {
     await interaction.deferReply({ flags: 64 });
     const { user, guildId } = interaction;
-    const purchase = pendingRolePurchases.get(user.id);
+    const purchase = pendingRolePurchases.get(`${guildId}:${user.id}`);
 
     if (!purchase) { await interaction.editReply({ content: '❌ Aucune création de rôle en cours.' }); return; }
 
     const requestId = await db.insertShopRequest(guildId, user.id, 'role', JSON.stringify({ roleName: purchase.roleName, color: purchase.color, duration: purchase.duration }), purchase.price);
-    pendingRolePurchases.delete(user.id);
+    pendingRolePurchases.delete(`${guildId}:${user.id}`);
 
     const validationChannel = await getValidationChannel(discordClient, guildId);
     if (validationChannel) {
@@ -133,7 +134,7 @@ async function handleConfirmRolePurchase(interaction, discordClient) {
 
 async function handleCancelRolePurchase(interaction) {
     await interaction.deferReply({ flags: 64 });
-    pendingRolePurchases.delete(interaction.user.id);
+    pendingRolePurchases.delete(`${interaction.guildId}:${interaction.user.id}`);
     await interaction.editReply({ content: '❌ Achat annulé.' });
 }
 
@@ -168,6 +169,10 @@ async function handleBuyPhraseButton(interaction) {
 
 async function handleApproveShopRequest(interaction, discordClient, sendLog) {
     await interaction.deferReply({ flags: 64 });
+    // Aucune vérification de permission n'existait auparavant — n'importe
+    // quel membre ayant accès au salon de validation pouvait approuver une
+    // demande, débiter des points et créer un rôle pour quelqu'un d'autre.
+    if (!await requireModerator(interaction)) return;
     const { customId, user, guild, guildId } = interaction;
     const requestId = customId.replace('approve_shop_', '');
     const request = await db.getShopRequest(requestId);
@@ -238,6 +243,9 @@ async function handleRejectShopRequest(interaction, sendLog) {
         if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: 64 });
     } catch { return; }
 
+    // Même garde-fou que pour l'approbation.
+    if (!await requireModerator(interaction)) return;
+
     const requestId = interaction.customId.replace('reject_shop_', '');
     const request = await db.getShopRequest(requestId);
 
@@ -271,7 +279,7 @@ async function handleShopModal(interaction, discordClient) {
 
 async function handleRoleNameModal(interaction) {
     const roleName = interaction.fields.getTextInputValue('role_name').trim();
-    pendingRolePurchases.set(interaction.user.id, { roleName, duration: null, color: null, price: null });
+    pendingRolePurchases.set(`${interaction.guildId}:${interaction.user.id}`, { roleName, duration: null, color: null, price: null });
     await interaction.deferReply({ flags: 64 });
 
     const { moneyName, prices } = await getShopContext(interaction.guildId);
@@ -315,10 +323,10 @@ async function handlePhraseModal(interaction, discordClient) {
     await interaction.deferReply({ flags: 64 });
     const { user, guildId } = interaction;
     const phraseText = sanitizeMentions(interaction.fields.getTextInputValue('phrase_text'));
-    const phraseData = pendingPhraseRequests.get(user.id);
+    const phraseData = pendingPhraseRequests.get(`${guildId}:${user.id}`);
     if (!phraseData) { await interaction.editReply({ content: '❌ Durée introuvable. Recommence depuis la boutique.' }); return; }
     const requestId = await db.insertShopRequest(guildId, user.id, 'phrase', JSON.stringify({ text: phraseText, lives: phraseData.lives }), phraseData.price);
-    pendingPhraseRequests.delete(user.id);
+    pendingPhraseRequests.delete(`${guildId}:${user.id}`);
     const validationChannel = await getValidationChannel(discordClient, guildId);
     if (validationChannel) {
         const { moneyName } = await getShopContext(guildId);
@@ -344,7 +352,7 @@ async function handleShopSelectMenu(interaction) {
 
 async function handlePhraseDurationSelect(interaction) {
     const [lives, price] = interaction.values[0].split('_');
-    pendingPhraseRequests.set(interaction.user.id, { lives: Number(lives), price: Number(price) });
+    pendingPhraseRequests.set(`${interaction.guildId}:${interaction.user.id}`, { lives: Number(lives), price: Number(price) });
     const modal = new ModalBuilder().setCustomId('phrase_modal').setTitle('Phrase épinglée');
     modal.addComponents(new ActionRowBuilder().addComponents(
         new TextInputBuilder().setCustomId('phrase_text').setLabel('Phrase à afficher').setStyle(TextInputStyle.Paragraph).setMaxLength(300).setRequired(true)
@@ -354,22 +362,24 @@ async function handlePhraseDurationSelect(interaction) {
 
 async function handleRoleDurationSelect(interaction) {
     await interaction.deferReply({ flags: 64 });
-    const purchase = pendingRolePurchases.get(interaction.user.id);
+    const purchaseKey = `${interaction.guildId}:${interaction.user.id}`;
+    const purchase = pendingRolePurchases.get(purchaseKey);
     if (!purchase) { await interaction.editReply({ content: '❌ Aucune création de rôle en cours.' }); return; }
     const [days, price] = interaction.values[0].split('_');
     purchase.duration = Number(days);
     purchase.price = Number(price);
-    pendingRolePurchases.set(interaction.user.id, purchase);
+    pendingRolePurchases.set(purchaseKey, purchase);
     if (!purchase.color) { await interaction.editReply({ content: '✅ Durée enregistrée. Choisis maintenant la couleur.' }); return; }
     await sendRolePurchaseSummary(interaction, purchase);
 }
 
 async function handleRoleColorSelect(interaction) {
     await interaction.deferReply({ flags: 64 });
-    const purchase = pendingRolePurchases.get(interaction.user.id);
+    const purchaseKey = `${interaction.guildId}:${interaction.user.id}`;
+    const purchase = pendingRolePurchases.get(purchaseKey);
     if (!purchase) { await interaction.editReply({ content: '❌ Aucune création de rôle en cours.' }); return; }
     purchase.color = interaction.values[0];
-    pendingRolePurchases.set(interaction.user.id, purchase);
+    pendingRolePurchases.set(purchaseKey, purchase);
     if (!purchase.duration) { await interaction.editReply({ content: '✅ Couleur enregistrée. Choisis maintenant la durée.' }); return; }
     await sendRolePurchaseSummary(interaction, purchase);
 }

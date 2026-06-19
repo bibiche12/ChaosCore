@@ -2,6 +2,7 @@ const axios = require('axios');
 const config = require('../../config');
 const db = require('../../db/queries');
 const { resolveShopPrices } = require('../../services/shop');
+const { requireModerator } = require('../../utils/guildSettings');
 
 async function getEmojiPriceAndCurrency(guildId) {
     const shopSettings = await db.getModuleSettings(guildId, 'shop').catch(() => null);
@@ -40,6 +41,10 @@ async function handleEmojiButton(interaction) {
 
 async function handleApproveEmoji(interaction, guild) {
     await deferEphemeral(interaction);
+    // Aucune vérification de permission n'existait auparavant — n'importe
+    // qui ayant accès au salon de logs pouvait approuver une demande d'emoji,
+    // débitant les points d'un autre membre et créant l'emoji serveur.
+    if (!await requireModerator(interaction)) return;
     const requestId = interaction.customId.replace('approve_emoji_', '');
     const request = await db.getEmojiRequest(requestId);
 
@@ -78,6 +83,9 @@ async function handleApproveEmoji(interaction, guild) {
 }
 
 async function handleRejectEmoji(interaction) {
+    await deferEphemeral(interaction);
+    // Même garde-fou que pour l'approbation.
+    if (!await requireModerator(interaction)) return;
     const requestId = interaction.customId.replace('reject_emoji_', '');
     const request = await db.getEmojiRequest(requestId);
     if (!request) { await replyEphemeral(interaction, "❌ Demande d'emoji introuvable."); return; }
@@ -97,7 +105,10 @@ async function handleEmojiModal(interaction) {
     }
 
     const { price } = await getEmojiPriceAndCurrency(interaction.guildId);
-    pendingEmojiRequests.set(user.id, { emojiName, price });
+    // Clé composite guildId:userId — sinon une demande d'emoji en cours sur
+    // un serveur pouvait être écrasée par une demande sur un autre serveur
+    // pour un même membre présent sur les deux.
+    pendingEmojiRequests.set(`${interaction.guildId}:${user.id}`, { emojiName, price });
 
     await replyEphemeral(interaction,
         `🎨 Emoji demandé : **:${emojiName}:**\n\n` +
