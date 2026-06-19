@@ -25,6 +25,7 @@ async function handleSupportTicketButton(interaction) {
     const { customId } = interaction;
     if (customId === 'support_ticket_open') { await openSupportTicket(interaction); return true; }
     if (customId === 'support_ticket_close') { await closeSupportTicket(interaction); return true; }
+    if (customId === 'support_ticket_claim') { await claimSupportTicket(interaction); return true; }
     return false;
 }
 
@@ -144,9 +145,17 @@ async function createSupportTicketChannel(interaction, categoryLabel) {
         embed.addFields({ name: 'Catégorie', value: categoryLabel });
     }
 
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('support_ticket_close').setLabel('Fermer le ticket').setEmoji('🔒').setStyle(ButtonStyle.Danger)
-    );
+    const rowButtons = [
+        new ButtonBuilder().setCustomId('support_ticket_close').setLabel('Fermer le ticket').setEmoji('🔒').setStyle(ButtonStyle.Danger),
+    ];
+
+    if (supportSettings?.claim_enabled) {
+        rowButtons.push(
+            new ButtonBuilder().setCustomId('support_ticket_claim').setLabel('Prendre en charge').setEmoji('🙋').setStyle(ButtonStyle.Primary)
+        );
+    }
+
+    const row = new ActionRowBuilder().addComponents(rowButtons);
 
     // Ping équipe si activé
     let pingContent = `${interaction.user}`;
@@ -186,6 +195,40 @@ async function closeSupportTicket(interaction) {
     await interaction.editReply({ content: `🔒 ${closeMessage}\n\nSuppression du salon dans 5 secondes...` });
 
     setTimeout(() => { interaction.channel.delete('Ticket support fermé').catch(() => null); }, 5000);
+}
+
+async function claimSupportTicket(interaction) {
+    await interaction.deferReply({ flags: 64 });
+
+    if (!await hasStaffPower(interaction.member)) {
+        await interaction.editReply({ content: "❌ Seul un membre du staff peut prendre en charge un ticket." });
+        return;
+    }
+
+    const ticket = await db.getSupportTicketByChannel(interaction.channel.id);
+    if (!ticket) { await interaction.editReply({ content: "❌ Ce salon n'est pas un ticket ouvert." }); return; }
+
+    if (ticket.claimed_by) {
+        const claimerTag = ticket.claimed_by === interaction.user.id ? 'toi' : `<@${ticket.claimed_by}>`;
+        await interaction.editReply({ content: `❌ Ce ticket est déjà pris en charge par ${claimerTag}.` });
+        return;
+    }
+
+    const claimed = await db.claimSupportTicket(interaction.channel.id, interaction.user.id);
+    if (!claimed) {
+        await interaction.editReply({ content: '❌ Impossible de prendre en charge ce ticket (déjà pris ?).' });
+        return;
+    }
+
+    const supportSettings = await db.getModuleSettings(interaction.guild.id, 'support').catch(() => null);
+
+    if (supportSettings?.rename_on_claim) {
+        const baseName = interaction.channel.name.replace(/^ticket-/, '').replace(/^pris-/, '');
+        await interaction.channel.setName(`pris-${baseName}`.slice(0, 100)).catch(() => null);
+    }
+
+    await interaction.channel.send(`🙋 Ticket pris en charge par ${interaction.user}.`).catch(() => null);
+    await interaction.editReply({ content: '✅ Tu as pris en charge ce ticket.' });
 }
 
 module.exports = { handleSupportTicketButton, handleSupportCategorySelect };

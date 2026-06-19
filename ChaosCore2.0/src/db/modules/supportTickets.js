@@ -39,6 +39,29 @@ module.exports = (pool) => {
         );
     }
 
+    // Système de prise en charge — configurable dans le dashboard
+    // (Support → Messages : claim_enabled, rename_on_claim) mais jusqu'ici
+    // sans aucune implémentation côté bot.
+    async function claimSupportTicket(channelId, staffId) {
+        const result = await pool.query(
+            `UPDATE support_tickets
+             SET claimed_by = $2
+             WHERE channel_id = $1 AND status = 'open' AND claimed_by IS NULL
+             RETURNING *`,
+            [channelId, staffId]
+        );
+        return result.rows[0] || null;
+    }
+
+    async function unclaimSupportTicket(channelId) {
+        await pool.query(
+            `UPDATE support_tickets
+             SET claimed_by = NULL
+             WHERE channel_id = $1`,
+            [channelId]
+        );
+    }
+
     async function getOpenTicketsCount(guildId) {
         const result = await pool.query(
             `SELECT COUNT(*)::int AS count FROM support_tickets
@@ -64,5 +87,7 @@ module.exports = (pool) => {
         closeSupportTicket,
         getOpenTicketsCount,
         getClosedTicketsCount,
+        claimSupportTicket,
+        unclaimSupportTicket,
     };
 };

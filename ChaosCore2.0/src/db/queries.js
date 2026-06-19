@@ -215,9 +215,18 @@ async function initDatabase() {
             user_id TEXT NOT NULL,
             channel_id TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'open',
+            claimed_by TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             closed_at TIMESTAMP
         );
+    `);
+
+    // Le dashboard (Support → Messages) propose déjà claim_enabled et
+    // rename_on_claim, mais aucune colonne ni bouton n'existait côté bot
+    // pour stocker/utiliser la prise en charge d'un ticket.
+    await pool.query(`
+        ALTER TABLE support_tickets
+        ADD COLUMN IF NOT EXISTS claimed_by TEXT;
     `);
 
     await pool.query(`
@@ -386,6 +395,54 @@ async function initDatabase() {
             image_url TEXT,
             published_at TIMESTAMP,
             status TEXT NOT NULL DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+    `);
+
+    // Récompenses Events configurables par serveur — cette table n'existait
+    // jusqu'ici que dans routes/setup.routes.js côté dashboard (un outil
+    // ponctuel non exécuté automatiquement). Sur une base de données neuve,
+    // le bot démarrait sans jamais la créer, cassant /tickets/rewards.
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS ticket_rewards (
+            id SERIAL PRIMARY KEY,
+            guild_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL,
+            description TEXT,
+            value INTEGER NOT NULL DEFAULT 0,
+            active BOOLEAN NOT NULL DEFAULT true,
+            premium BOOLEAN NOT NULL DEFAULT false,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+    `);
+
+    // Panneaux et rôles autorôles — même situation que ticket_rewards,
+    // jamais créés automatiquement par le bot sur une base neuve.
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS autorole_panels (
+            id SERIAL PRIMARY KEY,
+            guild_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            selection_type TEXT NOT NULL DEFAULT 'multiple',
+            display_type TEXT NOT NULL DEFAULT 'buttons',
+            required BOOLEAN NOT NULL DEFAULT false,
+            active BOOLEAN NOT NULL DEFAULT true,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+    `);
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS autorole_roles (
+            id SERIAL PRIMARY KEY,
+            guild_id TEXT NOT NULL,
+            panel_id INTEGER REFERENCES autorole_panels(id) ON DELETE CASCADE,
+            role_id TEXT NOT NULL,
+            role_name TEXT NOT NULL,
+            emoji TEXT,
+            remove_role_id TEXT,
+            active BOOLEAN NOT NULL DEFAULT true,
             created_at TIMESTAMP DEFAULT NOW()
         );
     `);
