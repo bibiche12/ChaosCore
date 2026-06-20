@@ -32,10 +32,15 @@ async function handlePollCommand(interaction) {
 
     const title = interaction.options.getString('titre');
     const question = interaction.options.getString('question');
-    const durationType = interaction.options.getString('duree');
-    const color = interaction.options.getString('couleur');
-    const allowMultiple = interaction.options.getBoolean('multiple');
-    const allowFreeAnswer = interaction.options.getBoolean('reponse_libre');
+    // default_duration_type, default_color, allow_multiple_default et
+    // allow_free_answer_default (polls_general.ejs) étaient configurables
+    // mais jamais lus — quand l'option Discord n'était pas précisée, le
+    // bot retombait toujours sur des valeurs câblées en dur (1h, violet,
+    // pas de multi-choix), ignorant les préférences du serveur.
+    const durationType = interaction.options.getString('duree') || pollSettings?.default_duration_type;
+    const color = interaction.options.getString('couleur') || pollSettings?.default_color;
+    const allowMultiple = interaction.options.getBoolean('multiple') ?? (pollSettings?.allow_multiple_default === true);
+    const allowFreeAnswer = interaction.options.getBoolean('reponse_libre') ?? (pollSettings?.allow_free_answer_default === true);
 
     const choices = [
         interaction.options.getString('choix1'),
@@ -97,6 +102,15 @@ async function handlePollCommand(interaction) {
 
     const message = await pollChannel.send({ embeds: [buildPollEmbed(poll, options)], components });
     await db.setPollMessageId(poll.id, message.id);
+
+    // logs_enabled / logs_channel_id / log_poll_create (polls_channels.ejs)
+    // étaient configurables mais jamais utilisés.
+    if (pollSettings?.logs_enabled && pollSettings?.logs_channel_id && pollSettings?.log_poll_create !== false) {
+        const logChannel = await interaction.client.channels.fetch(pollSettings.logs_channel_id).catch(() => null);
+        if (logChannel) {
+            await logChannel.send(`📋 **Sondage créé**\n\n📋 ${title}\n👤 Par : ${interaction.user}`).catch(() => null);
+        }
+    }
 
     await interaction.editReply({ content: `✅ Sondage envoyé dans <#${pollChannelId}>.` });
     return true;
