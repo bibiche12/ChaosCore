@@ -234,6 +234,16 @@ async function handleApproveShopRequest(interaction, discordClient, sendLog) {
         `👑 Validé par : ${user}`
     ).catch(() => null);
 
+    // dm_on_approve (shop_logs.ejs) était configurable mais jamais lu —
+    // le membre n'était jamais notifié en privé de l'acceptation.
+    const shopSettingsForDm = await db.getModuleSettings(guildId, 'shop').catch(() => null);
+    if (shopSettingsForDm?.dm_on_approve) {
+        const requester = await discordClient.users.fetch(request.user_id).catch(() => null);
+        if (requester) {
+            await requester.send(`✅ Ta demande boutique (**${request.type}**) sur **${guild.name}** a été acceptée !`).catch(() => null);
+        }
+    }
+
     await interaction.message.edit({ components: [] }).catch(() => null);
     await interaction.editReply({ content: `✅ Demande **#${requestId}** acceptée.` });
 }
@@ -260,6 +270,18 @@ async function handleRejectShopRequest(interaction, sendLog) {
         `📌 Type : **${request.type}**\n` +
         `👑 Refusé par : ${interaction.user}`
     ).catch(() => null);
+
+    // dm_on_reject (shop_logs.ejs) était configurable mais jamais lu.
+    // Note : auto_refund_on_reject n'a pas été implémenté — le rejet
+    // intervient toujours avant tout débit de points (le débit n'a lieu
+    // qu'à l'approbation), donc il n'y a rien à rembourser à ce stade.
+    const shopSettingsForDm = await db.getModuleSettings(interaction.guildId, 'shop').catch(() => null);
+    if (shopSettingsForDm?.dm_on_reject) {
+        const requester = await interaction.client.users.fetch(request.user_id).catch(() => null);
+        if (requester) {
+            await requester.send(`❌ Ta demande boutique (**${request.type}**) sur **${interaction.guild.name}** a été refusée.`).catch(() => null);
+        }
+    }
 
     await interaction.message.edit({ components: [] }).catch(() => null);
     await interaction.editReply({ content: `❌ Demande **#${requestId}** refusée.` });

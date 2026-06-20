@@ -58,6 +58,38 @@ async function handleWarningCommand(interaction, discordClient) {
         || serverSettings?.warning_explanation_channel_id
         || config.WARNING_EXPLANATION_CHANNEL_ID;
 
+    // auto_create_warning_role / auto_create_warning_channel
+    // (security_warnings.ejs) étaient configurables mais jamais lus —
+    // aucune création automatique n'avait jamais lieu, le rôle/salon
+    // devait toujours être créé et configuré manuellement au préalable.
+    let resolvedWarningRoleId = warningRoleId;
+    if (!resolvedWarningRoleId && securitySettings?.auto_create_warning_role) {
+        const roleName = securitySettings?.warning_role_name || 'Warning';
+        const createdRole = await interaction.guild.roles.create({ name: roleName, color: '#e74c3c', reason: 'Création automatique — rôle Warning' }).catch(() => null);
+        if (createdRole) {
+            resolvedWarningRoleId = createdRole.id;
+            const updated = { ...securitySettings, warning_role_id: createdRole.id };
+            await db.pool.query(
+                `INSERT INTO guild_module_settings (guild_id, module_name, settings, updated_at) VALUES ($1, 'security', $2, NOW()) ON CONFLICT (guild_id, module_name) DO UPDATE SET settings = $2, updated_at = NOW()`,
+                [guildId, updated]
+            ).catch(() => null);
+        }
+    }
+
+    let resolvedWarningChannelId = warningExplanationChannelId;
+    if (!resolvedWarningChannelId && securitySettings?.auto_create_warning_channel) {
+        const channelName = securitySettings?.warning_channel_name || 'warning-explication';
+        const createdChannel = await interaction.guild.channels.create({ name: channelName, reason: 'Création automatique — salon explication Warning' }).catch(() => null);
+        if (createdChannel) {
+            resolvedWarningChannelId = createdChannel.id;
+            const updated = { ...securitySettings, warning_channel_id: createdChannel.id };
+            await db.pool.query(
+                `INSERT INTO guild_module_settings (guild_id, module_name, settings, updated_at) VALUES ($1, 'security', $2, NOW()) ON CONFLICT (guild_id, module_name) DO UPDATE SET settings = $2, updated_at = NOW()`,
+                [guildId, updated]
+            ).catch(() => null);
+        }
+    }
+
     await db.addModerationWarning(guildId, member.id, interaction.user.id, reason);
 
     const warningCount = await db.countRecentWarnings(guildId, member.id, warningWindowMs);
@@ -75,7 +107,7 @@ async function handleWarningCommand(interaction, discordClient) {
 
     if (warningCount >= warningLimit) {
         await member.roles.remove(memberRoleId).catch(() => null);
-        await member.roles.add(warningRoleId).catch(() => null);
+        if (resolvedWarningRoleId) await member.roles.add(resolvedWarningRoleId).catch(() => null);
 
         const moderationChannel = await discordClient.channels.fetch(moderationChannelId).catch(() => null);
         if (moderationChannel) {
@@ -84,7 +116,7 @@ async function handleWarningCommand(interaction, discordClient) {
                     `🚨 **Seuil de warnings atteint**\n\n` +
                     `👤 Membre : ${member}\n` +
                     `⚠️ Warnings sur 24h : **${warningCount}/${warningLimit}**\n` +
-                    `📍 Salon explication : <#${warningExplanationChannelId}>\n\n` +
+                    `📍 Salon explication : ${resolvedWarningChannelId ? `<#${resolvedWarningChannelId}>` : 'non configuré'}\n\n` +
                     `Après l'entrevue :\n` +
                     `✅ Résolu = retrait du rôle Warning\n` +
                     `❌ Exclure = kick automatique`,
