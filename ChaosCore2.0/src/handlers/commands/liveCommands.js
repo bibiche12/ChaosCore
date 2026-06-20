@@ -70,19 +70,32 @@ async function handleRaidOffCommand(interaction, discordClient) {
     const securitySettings = await db.getModuleSettings(interaction.guildId, 'security').catch(() => null);
     const securityChannelId = securitySettings?.logs_channel_id || config.SECURITY_LOG_CHANNEL_ID;
 
+    // Si raid_lock_server avait verrouillé le serveur, /raidoff doit le
+    // déverrouiller symétriquement — sinon le serveur restait bloqué pour
+    // tout le monde sans aucun moyen de revenir en arrière depuis le dashboard.
+    let unlockMessage = '';
+    if (securitySettings?.raid_lock_server && interaction.guild) {
+        const everyoneRole = interaction.guild.roles.everyone;
+        await everyoneRole.setPermissions(
+            everyoneRole.permissions.add('SendMessages', 'CreateInstantInvite'),
+            'Déverrouillage manuel après fin de raid'
+        ).catch(() => null);
+        unlockMessage = '\n🔓 Le serveur a été déverrouillé.';
+    }
+
     const securityChannel = await discordClient.channels
         .fetch(securityChannelId)
         .catch(() => null);
 
     if (securityChannel) {
         await securityChannel.send(
-            `🛡️ **Mode Raid désactivé**\n\n` +
+            `🛡️ **Mode Raid désactivé**${unlockMessage}\n\n` +
             `👤 Par : ${interaction.user}`
         );
     }
 
     await interaction.reply({
-        content: '✅ Mode raid désactivé.',
+        content: `✅ Mode raid désactivé.${unlockMessage}`,
         flags: 64,
     });
 }

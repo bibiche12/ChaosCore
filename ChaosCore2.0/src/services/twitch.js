@@ -90,24 +90,30 @@ async function generateLiveStatsSummary(guildId, participants = 0) {
     const recapFooter = twitchSettings?.recap_footer || 'Merci les Bibiches 🖤';
     const includeDuration = twitchSettings?.recap_include_duration !== false;
     const includeParticipants = twitchSettings?.recap_include_participants !== false;
+    // recap_include_commands était configurable mais jamais lu — les stats
+    // StreamElements (vies/morts/fails...) étaient toujours affichées,
+    // impossible à masquer du récap.
+    const includeCommands = twitchSettings?.recap_include_commands !== false;
 
     let statsLines = '';
-    if (commands.length > 0) {
-        statsLines = commands.map(cmd => `${cmd.emoji || '📊'} ${cmd.label} : **${liveStats[cmd.stat_key] || 0}**`).join('\n');
-    } else {
-        statsLines =
-            `❤️ Vies : **${liveStats.vies || 0}**\n` +
-            `💀 Morts : **${liveStats.morts || 0}**\n` +
-            `🤦 Fails : **${liveStats.fails || 0}**\n` +
-            `😱 Peurs / Cris : **${liveStats.peurs || 0}**\n` +
-            `👻 Karma : **${liveStats.karma || 0}**`;
+    if (includeCommands) {
+        if (commands.length > 0) {
+            statsLines = commands.map(cmd => `${cmd.emoji || '📊'} ${cmd.label} : **${liveStats[cmd.stat_key] || 0}**`).join('\n');
+        } else {
+            statsLines =
+                `❤️ Vies : **${liveStats.vies || 0}**\n` +
+                `💀 Morts : **${liveStats.morts || 0}**\n` +
+                `🤦 Fails : **${liveStats.fails || 0}**\n` +
+                `😱 Peurs / Cris : **${liveStats.peurs || 0}**\n` +
+                `👻 Karma : **${liveStats.karma || 0}**`;
+        }
     }
 
     const summary =
         `📊 **Résumé du live**\n\n` +
         (includeDuration && duree ? `⏱️ Durée : **${duree}**\n` : '') +
         (includeParticipants ? `👥 Participants actifs : **${participants}**\n\n` : '\n') +
-        statsLines + '\n\n' + recapFooter;
+        statsLines + (statsLines ? '\n\n' : '') + recapFooter;
 
     return { summary, recapEnabled, liveChannelId };
 }
@@ -151,8 +157,13 @@ async function createSubscription(sessionId, token, broadcasterId, type, version
 }
 
 async function createAllSubscriptions(sessionId, token, broadcasterId, twitchSettings) {
-    // Channel Points — toujours activé
-    await createSubscription(sessionId, token, broadcasterId, 'channel.channel_points_custom_reward_redemption.add');
+    // eventsub_channel_points (twitch_eventsub.ejs) était configurable mais
+    // ignoré — les Channel Points étaient toujours souscrits, impossible à
+    // désactiver depuis le dashboard pour un streamer qui ne voudrait que
+    // les subs/raids/hype train par exemple.
+    if (twitchSettings?.eventsub_channel_points !== false) {
+        await createSubscription(sessionId, token, broadcasterId, 'channel.channel_points_custom_reward_redemption.add');
+    }
 
     // Événements optionnels selon config dashboard
     if (twitchSettings?.eventsub_subs) {
@@ -431,17 +442,70 @@ async function handleTwitchTicketMessage(discordClient, sendContestLog, twitchNa
     if (!guild) return;
     const member = await guild.members.fetch(discordId).catch(() => null);
     if (!member) return;
-    if (!member.roles.cache.has(config.CHAOS_CHILD_ROLE_ID)) return;
+
+    // participation_role_enabled / participant_role_id (tickets_general.ejs)
+    // étaient configurables mais jamais lus — le code vérifiait toujours
+    // config.CHAOS_CHILD_ROLE_ID (rôle Black&Co'), qui n'existe sur aucun
+    // autre serveur. Conséquence : AUCUN membre d'un autre serveur ne
+    // pouvait jamais recevoir de tickets de présence/messages Twitch.
+    const ticketSettings = await db.getModuleSettings(guildId, 'tickets').catch(() => null);
+    const participationRoleEnabled = ticketSettings?.participation_role_enabled === true;
+    let participantRoleId = ticketSettings?.participant_role_id
+        || (guildId === process.env.GUILD_ID ? config.CHAOS_CHILD_ROLE_ID : null);
+
+    // auto_create_participant_role était configurable mais jamais lu — le
+    // rôle n'était jamais créé automatiquement, la restriction de
+    // participation ne pouvait jamais fonctionner sans configurer un rôle
+    // existant manuellement au préalable.
+    if (participationRoleEnabled && !participantRoleId && ticketSettings?.auto_create_participant_role) {
+        const roleName = ticketSettings?.participant_role_name || 'Participant Events';
+        const createdRole = await guild.roles.create({ name: roleName, reason: 'Création automatique — rôle participant Events' }).catch(() => null);
+        if (createdRole) {
+            participantRoleId = createdRole.id;
+            const updated = { ...ticketSettings, participant_role_id: createdRole.id };
+            await db.pool.query(
+                `INSERT INTO guild_module_settings (guild_id, module_name, settings, updated_at) VALUES ($1, 'tickets', $2, NOW()) ON CONFLICT (guild_id, module_name) DO UPDATE SET settings = $2, updated_at = NOW()`,
+                [guildId, updated]
+            ).catch(() => null);
+        }
+    }
+
+    if (participationRoleEnabled && participantRoleId && !member.roles.cache.has(participantRoleId)) return;
+    // Si la restriction n'est pas activée, tous les membres liés à un
+    // pseudo Twitch peuvent gagner des tickets — comportement par défaut
+    // plus cohérent pour un nouveau serveur sans config spécifique.
+
+    // ticket_presence / ticket_every_10_messages étaient déjà lus dans
+    // liveCommands.js pour l'annonce, mais le code qui distribue réellement
+    // les tickets utilisait toujours les valeurs Black&Co' en dur.
+    const ticketPresence = ticketSettings?.ticket_presence || config.TICKET_PRESENCE;
+    const ticketPer10Msg = ticketSettings?.ticket_every_10_messages || config.TICKET_EVERY_10_MESSAGES;
 
     if (!s.currentLive.users[discordId]) {
         s.currentLive.users[discordId] = { twitchName, messages: 0, presenceGiven: false, messageMilestones: 0 };
     }
     const liveUser = s.currentLive.users[discordId];
 
+    // gain_message_enabled et log_channel_id (tickets_logs.ejs) étaient
+    // configurables mais jamais lus — ces messages étaient toujours envoyés
+    // dans le salon de contest général, jamais dans un salon dédié au
+    // module tickets, et impossible à désactiver indépendamment.
+    const ticketLogsEnabled = ticketSettings?.logs_enabled !== false;
+    const gainMessageEnabled = ticketSettings?.gain_message_enabled !== false;
+
+    async function sendTicketLog(text) {
+        if (!ticketLogsEnabled || !gainMessageEnabled) return;
+        if (ticketSettings?.log_channel_id) {
+            const logChannel = await discordClient.channels.fetch(ticketSettings.log_channel_id).catch(() => null);
+            if (logChannel) { await logChannel.send(text).catch(() => null); return; }
+        }
+        await sendContestLog(text, guildId).catch(() => null);
+    }
+
     if (!liveUser.presenceGiven) {
         liveUser.presenceGiven = true;
-        await db.addPresenceTicket(guildId, discordId, config.TICKET_PRESENCE);
-        await sendContestLog(`🎟️ **Présence live validée**\n\n👤 ${member}\n📺 Twitch : **${twitchName}**\n➕ **${config.TICKET_PRESENCE} Tickets Events**`).catch(() => null);
+        await db.addPresenceTicket(guildId, discordId, ticketPresence);
+        await sendTicketLog(`🎟️ **Présence live validée**\n\n👤 ${member}\n📺 Twitch : **${twitchName}**\n➕ **${ticketPresence} Tickets Events**`);
     }
 
     liveUser.messages += 1;
@@ -450,10 +514,10 @@ async function handleTwitchTicketMessage(discordClient, sendContestLog, twitchNa
     const milestones = Math.floor(liveUser.messages / 10);
     if (milestones > liveUser.messageMilestones) {
         const gained = milestones - liveUser.messageMilestones;
-        const gainedTickets = gained * config.TICKET_EVERY_10_MESSAGES;
+        const gainedTickets = gained * ticketPer10Msg;
         liveUser.messageMilestones = milestones;
         await db.addTwitchMessageTickets(guildId, discordId, gainedTickets);
-        await sendContestLog(`💬 **Palier messages Twitch atteint**\n\n👤 ${member}\n📺 Twitch : **${twitchName}**\n💬 Messages live : **${liveUser.messages}**\n➕ **${gainedTickets} Tickets Events**`).catch(() => null);
+        await sendTicketLog(`💬 **Palier messages Twitch atteint**\n\n👤 ${member}\n📺 Twitch : **${twitchName}**\n💬 Messages live : **${liveUser.messages}**\n➕ **${gainedTickets} Tickets Events**`);
     }
 }
 

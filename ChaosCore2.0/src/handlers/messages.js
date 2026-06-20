@@ -235,6 +235,13 @@ async function handleAntiSpam(message, discordClient) {
     const antiSpamEnabled = securitySettings?.anti_spam_enabled !== false;
     if (!securityEnabled || !antiSpamEnabled) return false;
 
+    // anti_link_enabled et anti_file_enabled (security_links.ejs et
+    // security_files.ejs) étaient configurables séparément de l'anti-spam
+    // messages, mais jamais vérifiés — impossible de désactiver l'un sans
+    // l'autre depuis le dashboard.
+    const antiLinkEnabled = securitySettings?.anti_link_enabled !== false;
+    const antiFileEnabled = securitySettings?.anti_file_enabled !== false;
+
     const messageLimit = securitySettings?.spam_message_limit || config.ANTI_SPAM_MESSAGE_LIMIT;
     const messageWindow = (securitySettings?.spam_time_window || 10) * 1000;
     const linkLimit = securitySettings?.link_limit || config.ANTI_SPAM_LINK_LIMIT;
@@ -263,12 +270,12 @@ async function handleAntiSpam(message, discordClient) {
     data.messages.push(now);
 
     const content = message.content || '';
-    if (hasLink(content)) {
+    if (antiLinkEnabled && hasLink(content)) {
         const isWhitelisted = linkWhitelist.some(domain => content.includes(domain));
         if (!isWhitelisted) data.links.push(now);
     }
 
-    if (message.attachments.size > 0) data.files.push(now);
+    if (antiFileEnabled && message.attachments.size > 0) data.files.push(now);
 
     data.messages = data.messages.filter(t => now - t <= messageWindow);
     data.links    = data.links.filter(t => now - t <= linkWindow);
@@ -285,27 +292,54 @@ async function handleAntiSpam(message, discordClient) {
 
     spamWarnings.set(trackerKey, now);
 
+    const sanctionType = securitySettings?.spam_sanction || 'mute';
+    const sanctionLabel = { mute: 'temporairement mute', kick: 'expulsé', ban: 'banni' }[sanctionType] || 'temporairement mute';
+
+    // auto_sanctions_enabled (security_general.ejs) était configurable mais
+    // jamais lu — le bot appliquait toujours la sanction automatiquement,
+    // sans possibilité de passer en mode "détection seule, alerte la Team".
+    const autoSanctionsEnabled = securitySettings?.auto_sanctions_enabled !== false;
+
     await message.channel.send(
-        `⚠️ ${message.author}, comportement détecté comme **${reason}**.\n` +
-        `Par sécurité, tu es temporairement mute. La Team vérifiera si besoin.`
+        autoSanctionsEnabled
+            ? `⚠️ ${message.author}, comportement détecté comme **${reason}**.\n` +
+              `Par sécurité, tu vas être ${sanctionLabel}. La Team vérifiera si besoin.`
+            : `⚠️ Comportement détecté comme **${reason}** de la part de ${message.author}. La Team a été alertée.`
     ).catch(() => null);
 
-    const logsChannelId = securitySettings?.logs_channel_id || config.SECURITY_LOG_CHANNEL_ID;
-    const securityChannel = await discordClient.channels.fetch(logsChannelId).catch(() => null);
-    if (securityChannel) {
-        await securityChannel.send(
-            `🔇 **Auto-mute sécurité**\n\n` +
-            `👤 Membre : ${message.author}\n` +
-            `📌 Raison : **${reason}**\n` +
-            `⏱️ Durée : **${securitySettings?.spam_mute_duration || 10} minutes**\n` +
-            `📍 Salon : ${message.channel}\n\n` +
-            `La gestion manuelle pourra être faite en MP.`
-        ).catch(() => null);
+    // security_logs_enabled était configurable mais jamais lu — les logs
+    // de sécurité étaient toujours envoyés, impossible à désactiver.
+    const securityLogsEnabled = securitySettings?.security_logs_enabled !== false;
+    if (securityLogsEnabled) {
+        const logsChannelId = securitySettings?.logs_channel_id || config.SECURITY_LOG_CHANNEL_ID;
+        const securityChannel = await discordClient.channels.fetch(logsChannelId).catch(() => null);
+        if (securityChannel) {
+            await securityChannel.send(
+                `🔇 **${autoSanctionsEnabled ? 'Auto-sanction' : 'Alerte'} sécurité**\n\n` +
+                `👤 Membre : ${message.author}\n` +
+                `📌 Raison : **${reason}**\n` +
+                `⚖️ Sanction : **${autoSanctionsEnabled ? sanctionType : 'aucune (mode alerte)'}**${autoSanctionsEnabled && sanctionType === 'mute' ? ` (${securitySettings?.spam_mute_duration || 10} minutes)` : ''}\n` +
+                `📍 Salon : ${message.channel}\n\n` +
+                `La gestion manuelle pourra être faite en MP.`
+            ).catch(() => null);
+        }
     }
 
-    await member.timeout(timeoutMs, `ChaosCore anti-spam : ${reason}`).catch(error => {
-        console.error('❌ Impossible de timeout le membre:', error.message);
-    });
+    if (!autoSanctionsEnabled) return true;
+
+    if (sanctionType === 'kick') {
+        await member.kick(`ChaosCore anti-spam : ${reason}`).catch(error => {
+            console.error('❌ Impossible de kick le membre:', error.message);
+        });
+    } else if (sanctionType === 'ban') {
+        await member.ban({ reason: `ChaosCore anti-spam : ${reason}` }).catch(error => {
+            console.error('❌ Impossible de ban le membre:', error.message);
+        });
+    } else {
+        await member.timeout(timeoutMs, `ChaosCore anti-spam : ${reason}`).catch(error => {
+            console.error('❌ Impossible de timeout le membre:', error.message);
+        });
+    }
 
     return true;
 }

@@ -77,9 +77,33 @@ async function sendWelcomeMessage(member) {
     if (!channelId) return;
     const channel = await client.channels.fetch(channelId).catch(() => null);
     if (!channel) return;
-    const title = (welcomeSettings?.welcome_title || 'Bienvenue {username} !').replace('{username}', member.user.username).replace('{mention}', `${member}`).replace('{server}', member.guild.name).replace('{membercount}', member.guild.memberCount);
-    const msg = (welcomeSettings?.welcome_message || 'Bienvenue {mention} sur {server} !').replace('{username}', member.user.username).replace('{mention}', `${member}`).replace('{server}', member.guild.name).replace('{membercount}', member.guild.memberCount);
-    await channel.send(`**${title}**\n\n${msg}`).catch(() => null);
+
+    const replaceVars = (text) => text
+        .replace('{username}', member.user.username)
+        .replace('{mention}', `${member}`)
+        .replace('{server}', member.guild.name)
+        .replace('{membercount}', member.guild.memberCount);
+
+    const title = replaceVars(welcomeSettings?.welcome_title || 'Bienvenue {username} !');
+    const msg = replaceVars(welcomeSettings?.welcome_message || 'Bienvenue {mention} sur {server} !');
+
+    // welcome_color, show_member_count et mention_user étaient configurables
+    // mais jamais lus — le message était toujours envoyé en texte brut sans
+    // couleur, sans mention garantie et sans compteur de membres optionnel.
+    const embed = new EmbedBuilder()
+        .setColor(welcomeSettings?.welcome_color || '#9146ff')
+        .setTitle(title)
+        .setDescription(msg)
+        .setThumbnail(member.user.displayAvatarURL());
+
+    if (welcomeSettings?.show_member_count) {
+        embed.setFooter({ text: `Membre n°${member.guild.memberCount}` });
+    }
+
+    const content = welcomeSettings?.mention_user !== false ? `${member}` : undefined;
+
+    await channel.send({ content, embeds: [embed] }).catch(() => null);
+    await logWelcomeEvent(guildId, welcomeSettings, 'welcome', member);
 }
 
 async function sendGoodbyeMessage(member) {
@@ -92,8 +116,40 @@ async function sendGoodbyeMessage(member) {
     if (!channelId) return;
     const channel = await client.channels.fetch(channelId).catch(() => null);
     if (!channel) return;
-    const msg = (welcomeSettings?.goodbye_message || '{username} a quitté {server}.').replace('{username}', member.user.username).replace('{server}', member.guild.name);
-    await channel.send(msg).catch(() => null);
+
+    const title = (welcomeSettings?.goodbye_title || 'Au revoir 👋')
+        .replace('{username}', member.user.username)
+        .replace('{server}', member.guild.name);
+    const msg = (welcomeSettings?.goodbye_message || '{username} a quitté {server}.')
+        .replace('{username}', member.user.username)
+        .replace('{server}', member.guild.name);
+
+    // goodbye_color était configurable mais jamais lu — même problème que
+    // pour le message de bienvenue, toujours envoyé en texte brut.
+    const embed = new EmbedBuilder()
+        .setColor(welcomeSettings?.goodbye_color || '#e74c3c')
+        .setTitle(title)
+        .setDescription(msg)
+        .setThumbnail(member.user.displayAvatarURL());
+
+    await channel.send({ embeds: [embed] }).catch(() => null);
+    await logWelcomeEvent(guildId, welcomeSettings, 'goodbye', member);
+}
+
+// logs_enabled / log_welcome / log_goodbye / logs_channel_id étaient
+// configurables (welcome_logs.ejs et welcome_channels.ejs) mais jamais
+// utilisés — aucun événement bienvenue/au revoir n'était jamais loggé.
+async function logWelcomeEvent(guildId, welcomeSettings, type, member) {
+    if (!welcomeSettings?.logs_enabled) return;
+    if (type === 'welcome' && welcomeSettings?.log_welcome === false) return;
+    if (type === 'goodbye' && welcomeSettings?.log_goodbye === false) return;
+    if (!welcomeSettings?.logs_channel_id) return;
+
+    const logChannel = await client.channels.fetch(welcomeSettings.logs_channel_id).catch(() => null);
+    if (!logChannel) return;
+
+    const label = type === 'welcome' ? '👋 Arrivée' : '🚪 Départ';
+    await logChannel.send(`${label} : ${member.user.tag} (${member.id})`).catch(() => null);
 }
 
 async function cleanExpiredRoles() {
@@ -239,12 +295,48 @@ client.on('messageUpdate', async (oldMessage, newMessage) => {
     } catch (error) { console.error('❌ Erreur log messageUpdate:', error); }
 });
 
-async function triggerRaidAlert(guildId, members) {
+async function triggerRaidAlert(guildId, members, securitySettings, guild) {
     if (security.isRaidMode(guildId)) return;
     security.enableRaidMode(guildId);
+
+    // raid_time_window était configurable dans le dashboard (en secondes)
+    // mais jamais lu — le message affichait toujours "2 minutes" en dur.
+    const windowSeconds = securitySettings?.raid_time_window || 120;
+
+    // raid_alert_staff était configurable mais jamais utilisé — aucun ping
+    // de l'équipe n'était jamais envoyé, juste un message dans le salon log.
+    let pingContent = '';
+    if (securitySettings?.raid_alert_staff) {
+        const teamRoleId = securitySettings?.team_role_id || securitySettings?.moderator_role_id;
+        if (teamRoleId) pingContent = `<@&${teamRoleId}>\n\n`;
+    }
+
     const channel = await fetchConfiguredChannel(client, guildId, 'security_log_channel_id', config.SECURITY_LOG_CHANNEL_ID).catch(() => null);
-    if (!channel) return;
-    await channel.send(`🚨 **RAID POTENTIEL DÉTECTÉ**\n\n👥 Arrivées : **${members.length} membres**\n⏱️ Fenêtre : **2 minutes**\n\n🛡️ Mode Raid activé automatiquement.\n\n${members.map(m => `• ${m.user.tag}`).join('\n')}`).catch(() => null);
+    if (channel) {
+        await channel.send({
+            content:
+                `${pingContent}🚨 **RAID POTENTIEL DÉTECTÉ**\n\n` +
+                `👥 Arrivées : **${members.length} membres**\n` +
+                `⏱️ Fenêtre : **${windowSeconds} secondes**\n\n` +
+                `🛡️ Mode Raid activé automatiquement.\n\n` +
+                `${members.map(m => `• ${m.user.tag}`).join('\n')}`,
+            allowedMentions: { roles: pingContent ? [securitySettings?.team_role_id || securitySettings?.moderator_role_id] : [] },
+        }).catch(() => null);
+    }
+
+    // raid_lock_server était configurable mais jamais implémenté — le
+    // serveur n'était jamais réellement verrouillé pendant un raid.
+    if (securitySettings?.raid_lock_server && guild) {
+        const everyoneRole = guild.roles.everyone;
+        await everyoneRole.setPermissions(
+            everyoneRole.permissions.remove('SendMessages', 'CreateInstantInvite'),
+            'Verrouillage automatique anti-raid'
+        ).catch(() => null);
+        if (channel) {
+            await channel.send('🔒 Le serveur a été automatiquement verrouillé (envoi de messages et invitations désactivés pour @everyone). Utilise `/raidoff` une fois la situation sous contrôle pour déverrouiller.').catch(() => null);
+        }
+    }
+
     console.log(`🚨 [${guildId}] MODE RAID ACTIVÉ`);
 }
 
@@ -253,14 +345,26 @@ client.on('guildMemberAdd', async (member) => {
         const guildId = member.guild.id;
 
         // Anti-raid check
-        const recentJoins = getRecentJoins(guildId);
-        const now = Date.now();
-        recentJoins.push({ member, timestamp: now });
         const securitySettings = await db.getModuleSettings(guildId, 'security').catch(() => null);
-        const raidWindow = securitySettings?.anti_raid_window_ms || config.ANTI_RAID_WINDOW_MS;
-        const raidThreshold = securitySettings?.anti_raid_threshold || config.ANTI_RAID_THRESHOLD;
-        while (recentJoins.length && now - recentJoins[0].timestamp > raidWindow) recentJoins.shift();
-        if (recentJoins.length >= raidThreshold) await triggerRaidAlert(guildId, recentJoins.map(entry => entry.member));
+
+        // anti_raid_enabled n'était jamais vérifié — l'anti-raid restait
+        // toujours actif, impossible à désactiver depuis le dashboard.
+        if (securitySettings?.anti_raid_enabled !== false) {
+            const recentJoins = getRecentJoins(guildId);
+            const now = Date.now();
+            recentJoins.push({ member, timestamp: now });
+
+            // raid_join_limit et raid_time_window (en secondes) étaient
+            // configurables mais jamais lus — le bot utilisait toujours
+            // anti_raid_window_ms/anti_raid_threshold, des clés qui
+            // n'existent dans aucun formulaire du dashboard.
+            const raidWindow = (securitySettings?.raid_time_window || 120) * 1000;
+            const raidThreshold = securitySettings?.raid_join_limit || config.ANTI_RAID_THRESHOLD;
+            while (recentJoins.length && now - recentJoins[0].timestamp > raidWindow) recentJoins.shift();
+            if (recentJoins.length >= raidThreshold) {
+                await triggerRaidAlert(guildId, recentJoins.map(entry => entry.member), securitySettings, member.guild);
+            }
+        }
 
         // Rôle à l'arrivée — lu depuis la DB pour chaque guild
         const serverSettings = await db.getServerSettings(guildId).catch(() => null);
