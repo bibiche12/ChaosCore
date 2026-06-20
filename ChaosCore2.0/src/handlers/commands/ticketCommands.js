@@ -1,6 +1,6 @@
 const config = require('../../config');
 const db = require('../../db/queries');
-const { requireTeam } = require('../../utils/guildSettings');
+const { requireTeam, checkCommandEnabled } = require('../../utils/guildSettings');
 
 async function getTicketsName(guildId) {
     const ticketSettings = await db.getModuleSettings(guildId, 'tickets').catch(() => null);
@@ -24,6 +24,7 @@ async function handleTicketCommand(interaction, { sendContestLog }) {
 }
 
 async function handleAddTicketCommand(interaction, sendContestLog) {
+    if (!await checkCommandEnabled(interaction, 'tickets', 'adticket')) return;
     if (!await requireTeam(interaction)) return;
 
     await interaction.deferReply({ flags: 64 });
@@ -47,6 +48,7 @@ async function handleAddTicketCommand(interaction, sendContestLog) {
 }
 
 async function handleRemoveTicketCommand(interaction, sendContestLog) {
+    if (!await checkCommandEnabled(interaction, 'tickets', 'retticket')) return;
     if (!await requireTeam(interaction)) return;
 
     await interaction.deferReply({ flags: 64 });
@@ -70,6 +72,9 @@ async function handleRemoveTicketCommand(interaction, sendContestLog) {
 }
 
 async function handleResumeCommand(interaction) {
+    // command_resume_enabled (page Twitch → Commandes) était configurable
+    // mais jamais lu, malgré que /resume soit physiquement gérée ici.
+    if (!await checkCommandEnabled(interaction, 'twitch', 'resume')) return;
     await interaction.deferReply();
 
     const top = await db.getTopTickets(interaction.guildId, 20);

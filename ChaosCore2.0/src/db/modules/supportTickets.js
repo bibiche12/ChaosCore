@@ -20,6 +20,17 @@ module.exports = (pool) => {
         return result.rows[0] || null;
     }
 
+    // max_open_tickets_per_user (dashboard) nécessite de compter tous les
+    // tickets ouverts, pas juste vérifier l'existence d'un seul.
+    async function getOpenTicketsCountForUser(guildId, userId) {
+        const result = await pool.query(
+            `SELECT COUNT(*)::int AS count FROM support_tickets
+             WHERE guild_id = $1 AND user_id = $2 AND status = 'open'`,
+            [guildId, userId]
+        );
+        return result.rows[0].count;
+    }
+
     async function getSupportTicketByChannel(channelId) {
         const result = await pool.query(
             `SELECT * FROM support_tickets
@@ -83,6 +94,7 @@ module.exports = (pool) => {
     return {
         createSupportTicket,
         getOpenSupportTicket,
+        getOpenTicketsCountForUser,
         getSupportTicketByChannel,
         closeSupportTicket,
         getOpenTicketsCount,

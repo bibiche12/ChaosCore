@@ -5,7 +5,7 @@
 const config = require('../../config');
 const security = require('../../services/security');
 const db = require('../../db/queries');
-const { requireTeam } = require('../../utils/guildSettings');
+const { requireTeam, checkCommandEnabled } = require('../../utils/guildSettings');
 
 // ============================================================
 // HANDLER PRINCIPAL
@@ -97,6 +97,9 @@ async function handleScanCommand(
     discordClient,
     processLivePhrases
 ) {
+    // command_scan_enabled était configurable dans le dashboard Twitch
+    // mais jamais lu — la commande restait toujours active.
+    if (!await checkCommandEnabled(interaction, 'twitch', 'scan')) return;
     if (!await requireTeam(interaction)) {
         return;
     }
@@ -148,6 +151,8 @@ async function handleLiveStartCommand(
     twitchService,
     sendContestLog
 ) {
+    // command_live_enabled était configurable mais jamais lu.
+    if (!await checkCommandEnabled(interaction, 'twitch', 'live')) return;
     if (!await requireTeam(interaction)) {
         return;
     }
@@ -190,6 +195,8 @@ async function handleLiveStopCommand(
     twitchService,
     sendContestLog
 ) {
+    // command_stop_enabled était configurable mais jamais lu.
+    if (!await checkCommandEnabled(interaction, 'twitch', 'stop')) return;
     if (!await requireTeam(interaction)) {
         return;
     }

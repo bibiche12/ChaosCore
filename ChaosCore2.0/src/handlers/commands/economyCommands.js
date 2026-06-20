@@ -1,10 +1,24 @@
 const config = require('../../config');
 const db = require('../../db/queries');
-const { requireTeam } = require('../../utils/guildSettings');
+const { requireTeam, checkCommandEnabled } = require('../../utils/guildSettings');
 
+// currency_plural et currency_emoji étaient configurables dans le dashboard
+// mais jamais lus — le code utilisait toujours "💰" en dur et fabriquait le
+// pluriel en ajoutant un "s", ce qui casse pour toute monnaie au pluriel
+// irrégulier et ignore l'emoji choisi par le serveur.
 async function getMoneyName(guildId) {
     const economySettings = await db.getModuleSettings(guildId, 'economy').catch(() => null);
     return economySettings?.currency_singular || config.MONEY_NAME;
+}
+
+async function getCurrency(guildId) {
+    const economySettings = await db.getModuleSettings(guildId, 'economy').catch(() => null);
+    const singular = economySettings?.currency_singular || config.MONEY_NAME;
+    return {
+        singular,
+        plural: economySettings?.currency_plural || `${singular}s`,
+        emoji: economySettings?.currency_emoji || '💰',
+    };
 }
 
 async function handleEconomyCommand(interaction, { sendLog }) {
@@ -24,16 +38,19 @@ async function handleEconomyCommand(interaction, { sendLog }) {
 }
 
 async function handleProfileCommand(interaction) {
+    // command_profile_enabled (page Économie → Commandes) était
+    // configurable mais jamais lu.
+    if (!await checkCommandEnabled(interaction, 'economy', 'profile')) return;
     await interaction.deferReply({ flags: 64 });
 
     const points  = await db.getUserPoints(interaction.guildId, interaction.user.id);
     const tickets = await db.getTicketUser(interaction.guildId, interaction.user.id);
-    const moneyName = await getMoneyName(interaction.guildId);
+    const currency = await getCurrency(interaction.guildId);
 
     await interaction.editReply({
         content:
             `👤 **Profil**\n\n` +
-            `🏦 ${moneyName}s : **${points.balance}**\n` +
+            `${currency.emoji} ${currency.plural} : **${points.balance}**\n` +
             `🎟️ ${config.TICKETS_NAME} : **${tickets.tickets}**\n\n` +
             `💬 Messages Twitch : **${tickets.twitch_messages || 0}**\n` +
             `🔴 Présences live : **${tickets.presences || 0}**\n` +
@@ -42,6 +59,7 @@ async function handleProfileCommand(interaction) {
 }
 
 async function handleAddPointsCommand(interaction, sendLog) {
+    if (!await checkCommandEnabled(interaction, 'economy', 'adpoint')) return;
     if (!await requireTeam(interaction)) return;
 
     await interaction.deferReply({ flags: 64 });
@@ -49,23 +67,24 @@ async function handleAddPointsCommand(interaction, sendLog) {
     const target     = interaction.options.getUser('membre');
     const amount     = interaction.options.getInteger('montant');
     const newBalance = await db.addPoints(interaction.guildId, target.id, amount);
-    const moneyName  = await getMoneyName(interaction.guildId);
+    const currency   = await getCurrency(interaction.guildId);
 
     await sendLog(
-        `🏦 **Ajout de ${moneyName}s**\n\n` +
+        `${currency.emoji} **Ajout de ${currency.plural}**\n\n` +
         `👤 Membre : ${target}\n` +
         `➕ Montant : **${amount}**\n` +
-        `💰 Nouveau solde : **${newBalance}**\n` +
+        `${currency.emoji} Nouveau solde : **${newBalance}**\n` +
         `👑 Par : ${interaction.user}`
     ).catch(() => null);
 
     await interaction.editReply(
-        `✅ **${amount} ${moneyName}s** ajoutés à ${target}.\n` +
-        `💰 Nouveau solde : **${newBalance}**`
+        `✅ **${amount} ${currency.plural}** ajoutés à ${target}.\n` +
+        `${currency.emoji} Nouveau solde : **${newBalance}**`
     );
 }
 
 async function handleRemovePointsCommand(interaction, sendLog) {
+    if (!await checkCommandEnabled(interaction, 'economy', 'retpoint')) return;
     if (!await requireTeam(interaction)) return;
 
     await interaction.deferReply({ flags: 64 });
@@ -73,20 +92,20 @@ async function handleRemovePointsCommand(interaction, sendLog) {
     const target     = interaction.options.getUser('membre');
     const amount     = interaction.options.getInteger('montant');
     const newBalance = await db.addPoints(interaction.guildId, target.id, -amount);
-    const moneyName  = await getMoneyName(interaction.guildId);
+    const currency   = await getCurrency(interaction.guildId);
 
     await sendLog(
-        `🏦 **Retrait de ${moneyName}s**\n\n` +
+        `${currency.emoji} **Retrait de ${currency.plural}**\n\n` +
         `👤 Membre : ${target}\n` +
         `➖ Montant : **${amount}**\n` +
-        `💰 Nouveau solde : **${newBalance}**\n` +
+        `${currency.emoji} Nouveau solde : **${newBalance}**\n` +
         `👑 Par : ${interaction.user}`
     ).catch(() => null);
 
     await interaction.editReply(
-        `✅ **${amount} ${moneyName}s** retirés à ${target}.\n` +
-        `💰 Nouveau solde : **${newBalance}**`
+        `✅ **${amount} ${currency.plural}** retirés à ${target}.\n` +
+        `${currency.emoji} Nouveau solde : **${newBalance}**`
     );
 }
 
-module.exports = { handleEconomyCommand };
+module.exports = { handleEconomyCommand, getCurrency };

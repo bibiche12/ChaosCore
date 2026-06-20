@@ -1,6 +1,6 @@
 const config = require('../../config');
 const db = require('../../db/queries');
-const { requireTeam } = require('../../utils/guildSettings');
+const { requireTeam, checkCommandEnabled } = require('../../utils/guildSettings');
 
 async function handleShopCommand(interaction, { discordClient, setupShop }) {
     if (interaction.commandName === 'setupboutique') {
@@ -11,6 +11,7 @@ async function handleShopCommand(interaction, { discordClient, setupShop }) {
 }
 
 async function handleSetupShopCommand(interaction, discordClient, setupShop) {
+    if (!await checkCommandEnabled(interaction, 'shop', 'setupboutique')) return;
     if (!await requireTeam(interaction)) return;
 
     await interaction.deferReply({ flags: 64 });

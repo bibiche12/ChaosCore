@@ -3,6 +3,7 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const config = require('../../config');
 const db = require('../../db/queries');
 const { buildPollEmbed } = require('../../services/polls/pollResults');
+const { checkCommandEnabled } = require('../../utils/guildSettings');
 
 const COLORS = {
     rouge: 0xFF0000, orange: 0xFF8000, jaune: 0xFFD700,
@@ -12,6 +13,11 @@ const COLORS = {
 
 async function handlePollCommand(interaction) {
     if (interaction.commandName !== 'sondage') return false;
+
+    // command_poll_enabled (page Sondages → Commandes) était configurable
+    // mais jamais lu. Le champ DB s'appelle "poll" même si la commande
+    // Discord réelle est /sondage.
+    if (!await checkCommandEnabled(interaction, 'polls', 'poll')) return true;
 
     await interaction.deferReply({ flags: 64 });
 

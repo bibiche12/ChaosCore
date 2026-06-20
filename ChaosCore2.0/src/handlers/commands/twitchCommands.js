@@ -4,7 +4,7 @@
 
 const config = require('../../config');
 const db = require('../../db/queries');
-const { requireTeam } = require('../../utils/guildSettings');
+const { requireTeam, checkCommandEnabled } = require('../../utils/guildSettings');
 
 // ============================================================
 // HELPERS
@@ -40,6 +40,9 @@ async function handleTwitchCommand(interaction, { sendContestLog }) {
 // ============================================================
 
 async function handleTwitchLinkCommand(interaction, sendContestLog) {
+    // command_twitch_enabled était configurable dans le dashboard mais
+    // jamais lu — la commande restait toujours active peu importe le choix.
+    if (!await checkCommandEnabled(interaction, 'twitch', 'twitch')) return;
     if (!await requireTeam(interaction)) {
         return;
     }

@@ -45,15 +45,19 @@ async function openSupportTicket(interaction) {
     await interaction.deferReply({ flags: 64 });
 
     const guildId = interaction.guild.id;
+    const supportSettings = await db.getModuleSettings(guildId, 'support').catch(() => null);
 
-    // Vérifier ticket existant
-    const existingTicket = await db.getOpenSupportTicket(guildId, interaction.user.id);
-    if (existingTicket) {
-        await interaction.editReply({ content: `❌ Tu as déjà un ticket ouvert : <#${existingTicket.channel_id}>` });
+    // max_open_tickets_per_user était configurable dans le dashboard mais
+    // jamais lu — le bot limitait toujours à 1 ticket ouvert par défaut,
+    // peu importe la valeur choisie par l'admin.
+    const maxOpenTickets = supportSettings?.max_open_tickets_per_user || 1;
+    const openTicketsCount = await db.getOpenTicketsCountForUser(guildId, interaction.user.id).catch(() => 0);
+    if (openTicketsCount >= maxOpenTickets) {
+        const existingTicket = await db.getOpenSupportTicket(guildId, interaction.user.id);
+        const channelMention = existingTicket ? ` : <#${existingTicket.channel_id}>` : '.';
+        await interaction.editReply({ content: `❌ Tu as déjà atteint la limite de ${maxOpenTickets} ticket(s) ouvert(s)${channelMention}` });
         return;
     }
-
-    const supportSettings = await db.getModuleSettings(guildId, 'support').catch(() => null);
 
     // Si les catégories sont activées dans le dashboard, on affiche un menu
     // de sélection avant de créer le ticket plutôt que de le créer directement.
@@ -163,6 +167,11 @@ async function createSupportTicketChannel(interaction, categoryLabel) {
 
     await ticketChannel.send({ content: pingContent, embeds: [embed], components: [row] });
 
+    // dm_user_on_open était configurable mais jamais utilisé.
+    if (supportSettings?.dm_user_on_open) {
+        await interaction.user.send(`🎫 Ton ticket support a été créé sur **${interaction.guild.name}** : ${ticketChannel.toString()}`).catch(() => null);
+    }
+
     const confirmContent = `✅ Ton ticket a été créé : ${ticketChannel}`;
     if (interaction.deferred && !interaction.replied) {
         await interaction.editReply({ content: confirmContent, components: [] });
@@ -192,9 +201,82 @@ async function closeSupportTicket(interaction) {
         .replace('{user}', interaction.user.username);
 
     await db.closeSupportTicket(interaction.channel.id);
-    await interaction.editReply({ content: `🔒 ${closeMessage}\n\nSuppression du salon dans 5 secondes...` });
 
-    setTimeout(() => { interaction.channel.delete('Ticket support fermé').catch(() => null); }, 5000);
+    // dm_user_on_close était configurable mais jamais utilisé.
+    if (supportSettings?.dm_user_on_close) {
+        const ticketOwner = await interaction.guild.members.fetch(ticket.user_id).catch(() => null);
+        if (ticketOwner) {
+            await ticketOwner.send(`🔒 Ton ticket support sur **${interaction.guild.name}** a été fermé.\n\n${closeMessage}`).catch(() => null);
+        }
+    }
+
+    // transcript_enabled / archive_channel_id étaient configurables mais
+    // jamais utilisés — aucune transcription n'était jamais générée.
+    if (supportSettings?.transcript_enabled && supportSettings?.archive_channel_id) {
+        await sendTicketTranscript(interaction, ticket, supportSettings.archive_channel_id).catch(() => null);
+    }
+
+    // log_channel_id (salon de logs des actions tickets) était configurable
+    // mais jamais utilisé — aucune action n'était jamais loggée nulle part.
+    if (supportSettings?.log_channel_id) {
+        const logChannel = await interaction.guild.channels.fetch(supportSettings.log_channel_id).catch(() => null);
+        if (logChannel) {
+            await logChannel.send(
+                `🔒 **Ticket fermé**\n\n👤 Propriétaire : <@${ticket.user_id}>\n🔐 Fermé par : ${interaction.user}\n📍 Salon : ${interaction.channel.name}`
+            ).catch(() => null);
+        }
+    }
+
+    // closed_category_id permet de déplacer le salon plutôt que de le
+    // supprimer immédiatement — il était configurable mais jamais utilisé,
+    // le salon était toujours supprimé après 5 secondes fixes.
+    if (supportSettings?.closed_category_id) {
+        const closedCategory = await interaction.guild.channels.fetch(supportSettings.closed_category_id).catch(() => null);
+        if (closedCategory) {
+            await interaction.channel.setParent(closedCategory.id, { lockPermissions: false }).catch(() => null);
+            await interaction.channel.permissionOverwrites.edit(ticket.user_id, { SendMessages: false }).catch(() => null);
+
+            if (supportSettings?.delete_after_close) {
+                const delayMs = (supportSettings?.delete_after_minutes || 60) * 60 * 1000;
+                await interaction.editReply({ content: `🔒 ${closeMessage}\n\nSalon déplacé en archive, suppression dans ${supportSettings?.delete_after_minutes || 60} min.` });
+                setTimeout(() => { interaction.channel.delete('Ticket support archivé puis supprimé').catch(() => null); }, delayMs);
+            } else {
+                await interaction.editReply({ content: `🔒 ${closeMessage}\n\nSalon déplacé en archive.` });
+            }
+            return;
+        }
+    }
+
+    // Comportement par défaut si aucune catégorie d'archive n'est configurée.
+    if (supportSettings?.delete_after_close) {
+        const delayMs = (supportSettings?.delete_after_minutes || 60) * 60 * 1000;
+        await interaction.editReply({ content: `🔒 ${closeMessage}\n\nSuppression du salon dans ${supportSettings?.delete_after_minutes || 60} min.` });
+        setTimeout(() => { interaction.channel.delete('Ticket support fermé').catch(() => null); }, delayMs);
+    } else {
+        await interaction.editReply({ content: `🔒 ${closeMessage}\n\nSuppression du salon dans 5 secondes...` });
+        setTimeout(() => { interaction.channel.delete('Ticket support fermé').catch(() => null); }, 5000);
+    }
+}
+
+// Génère une transcription texte simple du ticket et la poste dans le
+// salon d'archive configuré. Reste volontairement basique (pas de mise en
+// forme HTML) — suffisant pour garder une trace consultable des échanges.
+async function sendTicketTranscript(interaction, ticket, archiveChannelId) {
+    const archiveChannel = await interaction.guild.channels.fetch(archiveChannelId).catch(() => null);
+    if (!archiveChannel) return;
+
+    const messages = await interaction.channel.messages.fetch({ limit: 100 }).catch(() => null);
+    if (!messages) return;
+
+    const sorted = Array.from(messages.values()).sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+    const lines = sorted.map(m => `[${m.createdAt.toLocaleString('fr-FR')}] ${m.author.tag}: ${m.content || '*(contenu non textuel)*'}`);
+    const transcriptText = lines.join('\n') || 'Aucun message dans ce ticket.';
+
+    const buffer = Buffer.from(transcriptText, 'utf-8');
+    await archiveChannel.send({
+        content: `📜 **Transcription du ticket** — <@${ticket.user_id}> — fermé par ${interaction.user}`,
+        files: [{ attachment: buffer, name: `transcript-${interaction.channel.name}.txt` }],
+    }).catch(() => null);
 }
 
 async function claimSupportTicket(interaction) {

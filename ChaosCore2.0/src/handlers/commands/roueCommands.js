@@ -5,6 +5,16 @@ async function handleRoueCommand(interaction) {
     if (interaction.commandName !== 'roue') return false;
 
     const guildId = interaction.guildId;
+
+    // /roue fait partie du module Casino (page dashboard Économie → Casino,
+    // listée dans la doc des commandes "🎰 Casino (4)"), mais ne vérifiait
+    // jamais casino_enabled — elle restait active même si l'admin désactivait
+    // le casino, contrairement à /pileouface, /de et /gratter.
+    const economySettings = await db.getModuleSettings(guildId, 'economy').catch(() => null);
+    if (economySettings?.casino_enabled === false) {
+        await interaction.reply({ content: '❌ Le casino est désactivé sur ce serveur.', flags: 64 });
+        return true;
+    }
     const nomDemande = interaction.options.getString('nom');
 
     // Récupérer les roues du guild

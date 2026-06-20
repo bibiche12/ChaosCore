@@ -220,7 +220,31 @@ async function getAutorolePanels(guildId) {
     return result.rows;
 }
 
+// Vérifie si une commande est activée pour un guild, en lisant le champ
+// command_<key>_enabled dans le module de settings concerné. Répond
+// directement à l'interaction si désactivée. Retourne true si l'exécution
+// doit continuer, false si la commande a été bloquée (et déjà répondue).
+//
+// Important — Discord ne permet pas de "masquer" une commande slash
+// globale par serveur sans la dupliquer en commande guild-scoped distincte.
+// Cette fonction n'empêche donc pas la commande d'apparaître dans
+// l'autocomplete Discord : elle bloque son exécution réelle et explique
+// pourquoi, ce qui reste le seul comportement fiable sans changer toute
+// l'architecture d'enregistrement des commandes (globale vs par-guild).
+async function checkCommandEnabled(interaction, moduleName, key) {
+    const settings = await require('../db/queries').getModuleSettings(interaction.guildId, moduleName).catch(() => null);
+    const enabledField = `command_${key}_enabled`;
+    if (settings && settings[enabledField] === false) {
+        const reply = { content: `❌ Cette commande a été désactivée sur ce serveur.`, flags: 64 };
+        if (interaction.deferred || interaction.replied) await interaction.editReply(reply).catch(() => null);
+        else await interaction.reply(reply).catch(() => null);
+        return false;
+    }
+    return true;
+}
+
 module.exports = {
+    checkCommandEnabled,
     getSettings,
     invalidateCache,
     hasTeamRole,
