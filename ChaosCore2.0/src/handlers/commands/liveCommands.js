@@ -195,7 +195,8 @@ async function handleLiveStartCommand(
     await sendContestLog(
         `🔴 **Live concours démarré**\n\n` +
         `Présence : **+${ticketPresence} Tickets**\n` +
-        `Messages : **+${ticketPer10Msg} Tickets tous les 10 messages non-spam**`
+        `Messages : **+${ticketPer10Msg} Tickets tous les 10 messages non-spam**`,
+        interaction.guildId
     ).catch(() => null);
 }
 
@@ -239,7 +240,8 @@ async function handleLiveStopCommand(
     );
 
     await sendContestLog(
-        `⚫ **Live concours arrêté**\n\n${summary}`
+        `⚫ **Live concours arrêté**\n\n${summary}`,
+        interaction.guildId
     ).catch(() => null);
 }
 

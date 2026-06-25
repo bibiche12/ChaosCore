@@ -60,7 +60,8 @@ async function handleTwitchLinkCommand(interaction, sendContestLog) {
         `🔗 **Association Twitch**\n\n` +
         `👤 Discord : ${target}\n` +
         `📺 Twitch : **${pseudo}**\n` +
-        `👑 Par : ${interaction.user}`
+        `👑 Par : ${interaction.user}`,
+        interaction.guildId
     ).catch(() => null);
 
     await interaction.editReply(

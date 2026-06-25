@@ -173,7 +173,7 @@ async function handleTestOverlayCommand(interaction, sendContestLog) {
         components: [new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId(`complete_overlay_${event.id}`).setLabel('Gage effectué').setEmoji('✅').setStyle(ButtonStyle.Success)
         )],
-    }).catch(() => null);
+    }, interaction.guildId).catch(() => null);
 
     await interaction.editReply(`✅ Test overlay envoyé.\n\n**${rewardName}** : ${userInput}`);
 }

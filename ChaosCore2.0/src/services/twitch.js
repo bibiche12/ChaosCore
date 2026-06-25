@@ -227,14 +227,15 @@ async function handleChannelPointRedemption(event, guildId, sendContestLog) {
                 `🎟️ Tickets : **+${rewardConfig.tickets}**\n` +
                 `📝 Texte : ${userInput || 'Aucun texte'}`,
             components: [button],
-        }).catch(() => null);
+        }, guildId).catch(() => null);
     } else {
         await sendContestLog(
             `🎟️ **Récompense points de chaîne**\n\n` +
             `📺 Viewer : **${twitchName}**\n` +
             `👤 Discord : ${discordId ? `<@${discordId}>` : 'Non lié'}\n` +
             `🎁 Récompense : **${rewardName}**\n` +
-            `🎟️ Tickets : **+${rewardConfig.tickets}**`
+            `🎟️ Tickets : **+${rewardConfig.tickets}**`,
+            guildId
         ).catch(() => null);
     }
 

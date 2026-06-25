@@ -39,7 +39,8 @@ async function handleAddTicketCommand(interaction, sendContestLog) {
         `🎟️ **Ajout manuel de ${ticketsName}**\n\n` +
         `👤 Membre : ${target}\n` +
         `➕ Montant : **${amount}**\n` +
-        `👑 Par : ${interaction.user}`
+        `👑 Par : ${interaction.user}`,
+        interaction.guildId
     ).catch(() => null);
 
     await interaction.editReply(
@@ -63,7 +64,8 @@ async function handleRemoveTicketCommand(interaction, sendContestLog) {
         `🎟️ **Retrait manuel de ${ticketsName}**\n\n` +
         `👤 Membre : ${target}\n` +
         `➖ Montant : **${amount}**\n` +
-        `👑 Par : ${interaction.user}`
+        `👑 Par : ${interaction.user}`,
+        interaction.guildId
     ).catch(() => null);
 
     await interaction.editReply(
